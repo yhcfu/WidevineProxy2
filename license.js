@@ -366,6 +366,16 @@ export class Session {
     }
 
     getPSSH() {
-        return uint8ArrayToBase64(this._pssh);
+        const dataLength = this._pssh.length;
+        const totalLength = dataLength + 32;
+        const pssh = new Uint8Array([
+            ...this._intToUint8Array(totalLength),
+            ...PSSH_MAGIC,
+            ...new Uint8Array(4),
+            ...WIDEVINE_SYSTEM_ID,
+            ...this._intToUint8Array(dataLength),
+            ...this._pssh
+        ]);
+        return uint8ArrayToBase64(pssh);
     }
 }
