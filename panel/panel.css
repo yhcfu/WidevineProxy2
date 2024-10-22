@@ -1,0 +1,53 @@
+.header {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.header > * {
+    margin: 5px;
+}
+
+#wvd > * {
+    margin: 5px;
+}
+
+.log-container {
+    display: flex;
+    justify-content: center;
+}
+
+.right-bound {
+    text-align: right;
+}
+
+.text-box {
+    width: 80%;
+}
+
+.expandableDiv {
+    width: 100%;
+    overflow: hidden;
+    background-color: lightblue;
+    padding: 0;
+}
+
+.expandableDiv.expanded {
+    padding: 5px;
+}
+
+.expandableDiv.collapsed {
+    padding: 0;
+}
+
+.always-visible {
+    display: block;
+}
+
+.expanded-only {
+    display: none;
+}
+
+.expandableDiv.expanded .expanded-only {
+    display: block;
+}
