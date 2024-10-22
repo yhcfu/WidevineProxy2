@@ -38,7 +38,7 @@ This addon requires a Widevine Device file to work, which is not provided by thi
 ## Setup
 + Once installed, open the extension, click `Choose File` and select your Widevine Device file.
 + The files are saved in the extension's `chrome.storage.sync` storage and will be synchronized across any browsers into which the user is signed in with their Google account.
-+ Due to the sync storage limit of 100KB, the maximum amount of installable of devices at the same time is ~30.
++ Due to the sync storage limit of 100KB, the maximum number of installable devices at the same time is ~30.
 + Check `Enabled` to activate the message interception and you're done.
 
 ## Usage
@@ -46,9 +46,14 @@ All the user has to do is to play a DRM protected video and the decryption keys 
 Keys are saved:
 + Temporarily until the extension is either refreshed manually (if installed temporarily) or a removal of the keys is manually initiated.
 + Permanently in the extension's `chrome.storage.local` storage until manually wiped or exported via the command line.
+> [!NOTE]  
+> The video will not play when the interception is active, as the Widevine CDM library isn't able to decrypt the Android CDM license.
+
++ Click the `+` button to expand the section to reveal the PSSH and keys. 
+
 
 ## Issues
-+ DRM playback won't work when the extension is disabled and EME Logger is active. This caused by my fix for dealing with EME Logger interference (solutions are welcome).
++ DRM playback won't work when the extension is disabled and EME Logger is active. This is caused by my fix for dealing with EME Logger interference (solutions are welcome).
 
 ## Demo
 [Widevineproxy2.webm](https://github.com/user-attachments/assets/8f51cee3-50e2-4aa4-b244-afa2d0b2987e)
