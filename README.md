@@ -51,7 +51,7 @@ Keys are saved:
 + DRM playback won't work when the extension is disabled and EME Logger is active. This caused by my fix for dealing with EME Logger interference (solutions are welcome).
 
 ## Demo
-[Demo](demo.mp4)
+[Widevineproxy2.webm](https://github.com/user-attachments/assets/8f51cee3-50e2-4aa4-b244-afa2d0b2987e)
 
 ## Disclaimer
 + This program is intended solely for educational purposes.
