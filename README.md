@@ -23,7 +23,7 @@ This addon requires a Widevine Device file to work, which is not provided by thi
   1. Download this repository as a ZIP file
   2. Navigate to `chrome://extensions/`
   3. Enable `Developer mode`
-  4. Click `Load unpacked` and the select downloaded file
+  4. Drag-and-drop the downloaded file into the window
 + Firefox
   + Persistent installation
     1. Download the XPI file from the [releases section](https://github.com/DevLARLEY/WidevineProxy2/releases)
