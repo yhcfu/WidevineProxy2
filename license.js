@@ -365,6 +365,13 @@ export class Session {
         return forge.random.getBytesSync(16)
     }
 
+    _intToUint8Array(num) {
+        const buffer = new ArrayBuffer(4);
+        const view = new DataView(buffer);
+        view.setUint32(0, num, false);
+        return new Uint8Array(buffer);
+    }
+
     getPSSH() {
         const dataLength = this._pssh.length;
         const totalLength = dataLength + 32;
