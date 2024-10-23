@@ -5,7 +5,7 @@ import {
     uint8ArrayToString,
     stringToUint8Array,
     stringToHex,
-    base64toUint8Array, uint8ArrayToBase64
+    base64toUint8Array, uint8ArrayToBase64, intToUint8Array
 } from "./util.js"
 const { ClientIdentification, DrmCertificate, EncryptedClientIdentification, License, LicenseRequest, LicenseType,
     ProtocolVersion, SignedDrmCertificate, SignedMessage, WidevinePsshData } = protobuf.roots.default.license_protocol;
@@ -365,24 +365,21 @@ export class Session {
         return forge.random.getBytesSync(16)
     }
 
-    _intToUint8Array(num) {
-        const buffer = new ArrayBuffer(4);
-        const view = new DataView(buffer);
-        view.setUint32(0, num, false);
-        return new Uint8Array(buffer);
-    }
-
-    getPSSH() {
-        const dataLength = this._pssh.length;
+    static psshDataToPsshBoxB64(pssh_data) {
+        const dataLength = pssh_data.length;
         const totalLength = dataLength + 32;
         const pssh = new Uint8Array([
-            ...this._intToUint8Array(totalLength),
+            ...intToUint8Array(totalLength),
             ...PSSH_MAGIC,
             ...new Uint8Array(4),
             ...WIDEVINE_SYSTEM_ID,
-            ...this._intToUint8Array(dataLength),
-            ...this._pssh
+            ...intToUint8Array(dataLength),
+            ...pssh_data
         ]);
         return uint8ArrayToBase64(pssh);
+    }
+
+    getPSSH() {
+        return Session.psshDataToPsshBoxB64(this._pssh)
     }
 }

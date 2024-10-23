@@ -182,6 +182,13 @@ export class SettingsManager {
     }
 }
 
+export function intToUint8Array(num) {
+    const buffer = new ArrayBuffer(4);
+    const view = new DataView(buffer);
+    view.setUint32(0, num, false);
+    return new Uint8Array(buffer);
+}
+
 export function compareUint8Arrays(arr1, arr2) {
     if (arr1.length !== arr2.length)
         return false;

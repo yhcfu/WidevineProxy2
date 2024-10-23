@@ -3,7 +3,14 @@ import "./license_protocol.js";
 import "./forge.min.js";
 
 import { Session } from "./license.js";
-import { DeviceManager, base64toUint8Array, uint8ArrayToBase64, uint8ArrayToHex, SettingsManager, AsyncLocalStorage } from "./util.js";
+import {
+    DeviceManager,
+    base64toUint8Array,
+    uint8ArrayToBase64,
+    uint8ArrayToHex,
+    SettingsManager,
+    AsyncLocalStorage
+} from "./util.js";
 import { WidevineDevice } from "./device.js";
 
 const { LicenseType, SignedMessage, LicenseRequest, License } = protobuf.roots.default.license_protocol;
@@ -34,7 +41,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                             return;
                         }
 
-                        if (logs.filter(log => log.pssh_data === uint8ArrayToBase64(pssh_data)).length > 0) {
+                        if (logs.filter(log => log.pssh_data === Session.psshDataToPsshBoxB64(pssh_data)).length > 0) {
                             console.log("[WidevineProxy2]", `KEYS_ALREADY_RETRIEVED: ${uint8ArrayToBase64(pssh_data)}`);
                             sendResponse(message.body);
                             return;
