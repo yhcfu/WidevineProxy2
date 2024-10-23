@@ -51,6 +51,15 @@ Keys are saved:
 
 + Click the `+` button to expand the section to reveal the PSSH and keys. 
 
+## FAQ
+
+> Is Manifest detection possible?
+
+No, the extension works with Manifest V3, which does not have access to the webRequest API.
+
+> What if I'm unable to get the keys?
+
+This automatically means that the license server is blocking your CDM and that you either need a CDM from a physical device, a ChromeCDM, or an L1 Android CDM. Don't ask where you can get these
 
 ## Issues
 + DRM playback won't work when the extension is disabled and EME Logger is active. This is caused by my fix for dealing with EME Logger interference (solutions are welcome).
