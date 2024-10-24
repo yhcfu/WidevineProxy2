@@ -61,7 +61,7 @@ function getEventListeners(type) {
                 const listeners = store[type];
 
                 let wrappedListener = listener;
-                if (!!listener && !listener._isWrapped) {
+                if (type === "message" && !!listener && !listener._isWrapped) {
                     wrappedListener = async function(event) {
                         if (event instanceof MediaKeyMessageEvent) {
                             if (event._isCustomEvent) {
