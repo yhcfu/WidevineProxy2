@@ -63,6 +63,7 @@ This automatically means that the license server is blocking your CDM and that y
 
 ## Issues
 + DRM playback won't work when the extension is disabled and EME Logger is active. This is caused by my fix for dealing with EME Logger interference (solutions are welcome).
++ Having the extension installed causes the UnRAID dashboard not to load
 
 ## Demo
 [Widevineproxy2.webm](https://github.com/user-attachments/assets/8f51cee3-50e2-4aa4-b244-afa2d0b2987e)
