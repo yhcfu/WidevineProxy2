@@ -4,6 +4,12 @@ import { base64toUint8Array, DeviceManager, SettingsManager } from "../util.js";
 
 const key_container = document.getElementById('key-container');
 
+const toggle = document.getElementById('darkModeToggle');
+toggle.addEventListener('change', async () => {
+    await SettingsManager.setDarkMode(toggle.checked);
+    await SettingsManager.saveDarkMode(toggle.checked);
+});
+
 const enabled = document.getElementById('enabled');
 enabled.addEventListener('change', async function (){
     await SettingsManager.setEnabled(enabled.checked);
@@ -76,9 +82,11 @@ function applyListeners() {
         button.addEventListener('click', function () {
             const expandableDiv = this.nextElementSibling;
             if (expandableDiv.classList.contains('collapsed')) {
+                button.innerHTML = "-";
                 expandableDiv.classList.remove('collapsed');
                 expandableDiv.classList.add('expanded');
             } else {
+                button.innerHTML = "+";
                 expandableDiv.classList.remove('expanded');
                 expandableDiv.classList.add('collapsed');
             }
@@ -108,6 +116,7 @@ function checkLogs() {
 
 document.addEventListener('DOMContentLoaded', async function () {
     enabled.checked = await SettingsManager.getEnabled();
+    SettingsManager.setDarkMode(await SettingsManager.getDarkMode());
     await DeviceManager.loadSetAllWidevineDevices();
     await DeviceManager.selectWidevineDevice(await DeviceManager.getSelectedWidevineDevice());
     checkLogs();

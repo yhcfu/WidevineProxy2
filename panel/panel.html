@@ -8,12 +8,19 @@
 <body style="min-width: 200px;">
     <div class="header">
         <img src="../images/icon-128.png" alt="WidevineProxy Icon" width="64"/>
-        <img src="../images/proxy_text.png" alt="ProxyText" width="200"/>
+        <img id="textImage" src="../images/proxy_text.png" alt="ProxyText" width="200"/>
     </div>
     <fieldset>
         <legend>Settings</legend>
+        <!-- Enabled -->
         <input type="checkbox" id="enabled">
-        <label for="enabled"> Enabled</label><br>
+        <label for="enabled"> Enabled</label>
+        <!-- Dark mode -->
+        <label class="switch">
+            <input type="checkbox" id="darkModeToggle">
+            <span class="slider"></span>
+        </label>
+        <label for="enabled"> Dark mode</label>
         <fieldset id="wvd">
             <legend>Widevine Device</legend>
             <button type="button" id="fileInput">Choose File</button><br>

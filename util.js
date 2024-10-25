@@ -180,6 +180,23 @@ export class SettingsManager {
             reader.readAsArrayBuffer(file);
         })
     }
+
+    static async saveDarkMode(dark_mode) {
+        await AsyncSyncStorage.setStorage({ dark_mode: dark_mode });
+    }
+
+    static async getDarkMode() {
+        const result = await AsyncSyncStorage.getStorage(["dark_mode"]);
+        return result["dark_mode"] || false;
+    }
+
+    static setDarkMode(dark_mode) {
+        const textImage = document.getElementById("textImage");
+        const toggle = document.getElementById('darkModeToggle');
+        toggle.checked = dark_mode;
+        document.body.classList.toggle('dark-mode', dark_mode);
+        textImage.src = dark_mode ? "../images/proxy_text_dark.png" : "../images/proxy_text.png";
+    }
 }
 
 export function intToUint8Array(num) {
