@@ -21,7 +21,7 @@ This addon requires a Widevine Device file to work, which is not provided by thi
 
 ## Installation
 + Chrome
-  1. Download this repository as a ZIP file
+  1. Download the ZIP file from the [releases section](https://github.com/DevLARLEY/WidevineProxy2/releases)
   2. Navigate to `chrome://extensions/`
   3. Enable `Developer mode`
   4. Drag-and-drop the downloaded file into the window
@@ -32,7 +32,7 @@ This addon requires a Widevine Device file to work, which is not provided by thi
     3. Click the settings icon and choose `Install Add-on From File...`
     4. Select the downloaded file
   + Temporary installation
-    1. Download this repository as a ZIP file
+    1. Download the ZIP file from the [releases section](https://github.com/DevLARLEY/WidevineProxy2/releases)
     2. Navigate to `about:debugging#/runtime/this-firefox`
     3. Click `Load Temporary Add-on...` and select the downloaded file
 
@@ -45,7 +45,7 @@ pywidevine create-device -k device_private_key -c device_client_id_blob -t "ANDR
 Now, open the extension, click `Choose File` and select your Widevine Device file.
 
 ### Remote CDM
-If you don't already have a `remote.json` file, open the API URL in the browser (if provided) and save the response as `remote.json`. \ n
+If you don't already have a `remote.json` file, open the API URL in the browser (if provided) and save the response as `remote.json`. \
 Now, open the extension, click `Choose remote.json` and select the json file provided by your API.
 
 

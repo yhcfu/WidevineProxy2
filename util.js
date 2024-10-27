@@ -136,6 +136,10 @@ export class DeviceManager {
         await AsyncSyncStorage.setStorage({ devices: array });
         await AsyncSyncStorage.removeStorage([selected_device_name]);
     }
+
+    static async removeSelectedWidevineDeviceKey() {
+        await AsyncSyncStorage.removeStorage(["selected"]);
+    }
 }
 
 export class RemoteCDMManager {
@@ -196,6 +200,10 @@ export class RemoteCDMManager {
 
         await AsyncSyncStorage.setStorage({ remote_cdms: array });
         await AsyncSyncStorage.removeStorage([selected_remote_cdm_name]);
+    }
+
+    static async removeSelectedRemoteCDMKey() {
+        await AsyncSyncStorage.removeStorage(["selected_remote_cdm"]);
     }
 }
 

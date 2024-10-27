@@ -2,6 +2,7 @@ body {
     font-family: Arial, sans-serif;
     background-color: #ffffff;
     color: black;
+    width: 400px;
 }
 button:not(.toggleButton), select {
     padding: 4px;
@@ -12,6 +13,7 @@ button:not(.toggleButton), select {
 button, select {
     background-color: #e1e1e1;
     border: none;
+    max-width: 330px;
 }
 .text-box {
     outline: none;

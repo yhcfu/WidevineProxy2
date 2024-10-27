@@ -47,6 +47,8 @@ remove.addEventListener('click', async function() {
     const selected_option = wvd_combobox.options[wvd_combobox.selectedIndex];
     if (selected_option) {
         await DeviceManager.saveSelectedWidevineDevice(selected_option.text);
+    } else {
+        await DeviceManager.removeSelectedWidevineDeviceKey();
     }
 });
 
@@ -58,6 +60,8 @@ remote_remove.addEventListener('click', async function() {
     const selected_option = remote_combobox.options[remote_combobox.selectedIndex];
     if (selected_option) {
         await RemoteCDMManager.saveSelectedRemoteCDM(selected_option.text);
+    } else {
+        await RemoteCDMManager.removeSelectedRemoteCDMKey();
     }
 })
 
