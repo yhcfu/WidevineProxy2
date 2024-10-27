@@ -269,9 +269,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                             break;
                         case "REMOTE":
                             await parseLicenseRemote(message.body, sendResponse, tab_url);
-
-                            // temporary
-                            sendResponse();
                             break;
                     }
                     return;

@@ -362,7 +362,7 @@ export class Session {
     }
 
     _generateGenericIdentifier() {
-        return forge.random.getBytesSync(16)
+        return stringToUint8Array(forge.random.getBytesSync(16))
     }
 
     static psshDataToPsshBoxB64(pssh_data) {

@@ -1,4 +1,4 @@
-const { ClientIdentification } = protobuf.roots.default.license_protocol;
+const { ClientIdentification, SignedDrmCertificate, DrmCertificate } = protobuf.roots.default.license_protocol;
 
 export class Crc32 {
     constructor() {
@@ -49,16 +49,21 @@ export class WidevineDevice {
         const client_info = Object.fromEntries(this.client_id.clientInfo.map(item => [item.name, item.value]))
         const type = this.type === 1 ? "CHROME" : `L${this.security_level}`
 
+        const root_signed_cert = SignedDrmCertificate.decode(this.client_id.token);
+        const root_cert = DrmCertificate.decode(root_signed_cert.drmCertificate);
+
         let name = `[${type}]`;
         if (client_info["company_name"])
             name += ` ${client_info["company_name"]}`;
         if (client_info["model_name"])
-            name += `, ${client_info["model_name"]}`;
+            name += ` ${client_info["model_name"]}`;
         if (client_info["product_name"])
-            name += `, ${client_info["product_name"]}`;
+            name += ` ${client_info["product_name"]}`;
+        if (root_cert.systemId)
+            name += ` (${root_cert.systemId})`;
 
         const crc32 = new Crc32();
-        name += `, ${crc32.crc32(this._raw_bytes).toString(16)}`;
+        name += ` [${crc32.crc32(this._raw_bytes).toString(16)}]`;
 
         return name;
     }
