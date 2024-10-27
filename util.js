@@ -1,4 +1,5 @@
 import { WidevineDevice } from "./device.js";
+import { RemoteCdm } from "./remote_cdm.js";
 
 export class AsyncSyncStorage {
     static async setStorage(items) {
@@ -82,7 +83,6 @@ export class DeviceManager {
         const array = result.devices === undefined ? [] : result.devices;
         array.push(name);
         await AsyncSyncStorage.setStorage({ devices: array });
-
         await AsyncSyncStorage.setStorage({ [name]: value });
     }
 
@@ -138,6 +138,67 @@ export class DeviceManager {
     }
 }
 
+export class RemoteCDMManager {
+    static async saveRemoteCDM(name, obj) {
+        const result = await AsyncSyncStorage.getStorage(['remote_cdms']);
+        const array = result.remote_cdms === undefined ? [] : result.remote_cdms;
+        array.push(name);
+        await AsyncSyncStorage.setStorage({ remote_cdms: array });
+        await AsyncSyncStorage.setStorage({ [name]: obj });
+    }
+
+    static async loadRemoteCDM(name) {
+        const result = await AsyncSyncStorage.getStorage([name]);
+        return JSON.stringify(result[name] || {});
+    }
+
+    static setRemoteCDM(name, value){
+        const remote_combobox = document.getElementById('remote-combobox');
+        const remote_element = document.createElement('option');
+
+        remote_element.text = name;
+        remote_element.value = value;
+
+        remote_combobox.appendChild(remote_element);
+    }
+
+    static async loadSetAllRemoteCDMs() {
+        const result = await AsyncSyncStorage.getStorage(['remote_cdms']);
+        const array = result.remote_cdms || [];
+        for (const item of array) {
+            this.setRemoteCDM(item, await this.loadRemoteCDM(item));
+        }
+    }
+
+    static async saveSelectedRemoteCDM(name) {
+        await AsyncSyncStorage.setStorage({ selected_remote_cdm: name });
+    }
+
+    static async getSelectedRemoteCDM() {
+        const result = await AsyncSyncStorage.getStorage(["selected_remote_cdm"]);
+        return result["selected_remote_cdm"] || "";
+    }
+
+    static async selectRemoteCDM(name) {
+        document.getElementById('remote-combobox').value = await this.loadRemoteCDM(name);
+    }
+
+    static async removeSelectedRemoteCDM() {
+        const selected_remote_cdm_name = await RemoteCDMManager.getSelectedRemoteCDM();
+
+        const result = await AsyncSyncStorage.getStorage(['remote_cdms']);
+        const array = result.remote_cdms === undefined ? [] : result.remote_cdms;
+
+        const index = array.indexOf(selected_remote_cdm_name);
+        if (index > -1) {
+            array.splice(index, 1);
+        }
+
+        await AsyncSyncStorage.setStorage({ remote_cdms: array });
+        await AsyncSyncStorage.removeStorage([selected_remote_cdm_name]);
+    }
+}
+
 export class SettingsManager {
     static async setEnabled(enabled) {
         await AsyncSyncStorage.setStorage({ enabled: enabled });
@@ -178,7 +239,7 @@ export class SettingsManager {
                 resolve();
             };
             reader.readAsArrayBuffer(file);
-        })
+        });
     }
 
     static async saveDarkMode(dark_mode) {
@@ -196,6 +257,66 @@ export class SettingsManager {
         toggle.checked = dark_mode;
         document.body.classList.toggle('dark-mode', dark_mode);
         textImage.src = dark_mode ? "../images/proxy_text_dark.png" : "../images/proxy_text.png";
+    }
+
+    static async loadRemoteCDM(file) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = async function (loaded) {
+                const result = loaded.target.result;
+
+                let json_file = void 0;
+                try {
+                    json_file = JSON.parse(result);
+                } catch {
+                    resolve();
+                    return;
+                }
+
+                console.log("LOADED DEVICE:", json_file);
+                const remote_cdm = new RemoteCdm(
+                    json_file.device_type,
+                    json_file.system_id,
+                    json_file.security_level,
+                    json_file.host,
+                    json_file.secret,
+                    json_file.device_name ?? json_file.name,
+
+                );
+                const device_name = remote_cdm.get_name();
+                console.log("NAME:", device_name);
+
+                if (await RemoteCDMManager.loadRemoteCDM(device_name) === "{}") {
+                    await RemoteCDMManager.saveRemoteCDM(device_name, json_file);
+                }
+
+                await RemoteCDMManager.saveSelectedRemoteCDM(device_name);
+                resolve();
+            };
+            reader.readAsText(file);
+        });
+    }
+
+    static async saveSelectedDeviceType(selected_type) {
+        await AsyncSyncStorage.setStorage({ device_type: selected_type });
+    }
+
+    static async getSelectedDeviceType() {
+        const result = await AsyncSyncStorage.getStorage(["device_type"]);
+        return result["device_type"] || "WVD";
+    }
+
+    static setSelectedDeviceType(device_type) {
+        switch (device_type) {
+            case "WVD":
+                const wvd_select = document.getElementById('wvd_select');
+                wvd_select.checked = true;
+                break;
+            case "REMOTE":
+                const remote_select = document.getElementById('remote_select');
+                remote_select.checked = true;
+                break;
+        }
     }
 }
 

@@ -98,6 +98,14 @@ input:checked + .slider:before {
     margin-bottom: 3px;
 }
 
+#type-select {
+    margin-left: auto;
+}
+
+#settings {
+    display: flex;
+}
+
 .header {
     display: flex;
     justify-content: center;
@@ -107,7 +115,7 @@ input:checked + .slider:before {
     margin: 5px;
 }
 
-#wvd > * {
+#wvd > *, #remote > * {
     margin: 5px;
 }
 

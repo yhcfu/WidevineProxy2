@@ -1,6 +1,6 @@
 import "../protobuf.min.js";
 import "../license_protocol.js";
-import { base64toUint8Array, DeviceManager, SettingsManager } from "../util.js";
+import { base64toUint8Array, DeviceManager, RemoteCDMManager, SettingsManager } from "../util.js";
 
 const key_container = document.getElementById('key-container');
 
@@ -15,9 +15,28 @@ enabled.addEventListener('change', async function (){
     await SettingsManager.setEnabled(enabled.checked);
 });
 
+const wvd_select = document.getElementById('wvd_select');
+wvd_select.addEventListener('change', async function (){
+    if (wvd_select.checked) {
+        await SettingsManager.saveSelectedDeviceType("WVD");
+    }
+});
+
+const remote_select = document.getElementById('remote_select');
+remote_select.addEventListener('change', async function (){
+    if (remote_select.checked) {
+        await SettingsManager.saveSelectedDeviceType("REMOTE");
+    }
+});
+
 const wvd_combobox = document.getElementById('wvd-combobox');
 wvd_combobox.addEventListener('change', async function() {
     await DeviceManager.saveSelectedWidevineDevice(wvd_combobox.options[wvd_combobox.selectedIndex].text);
+});
+
+const remote_combobox = document.getElementById('remote-combobox');
+remote_combobox.addEventListener('change', async function() {
+    await RemoteCDMManager.saveSelectedRemoteCDM(remote_combobox.options[remote_combobox.selectedIndex].text);
 });
 
 const remove = document.getElementById('remove');
@@ -31,12 +50,32 @@ remove.addEventListener('click', async function() {
     }
 });
 
+const remote_remove = document.getElementById('remoteRemove');
+remote_remove.addEventListener('click', async function() {
+    await RemoteCDMManager.removeSelectedRemoteCDM();
+    remote_combobox.innerHTML = '';
+    await RemoteCDMManager.loadSetAllRemoteCDMs();
+    const selected_option = remote_combobox.options[remote_combobox.selectedIndex];
+    if (selected_option) {
+        await RemoteCDMManager.saveSelectedRemoteCDM(selected_option.text);
+    }
+})
+
 const download = document.getElementById('download');
 download.addEventListener('click', async function() {
     const widevine_device = await DeviceManager.getSelectedWidevineDevice();
     SettingsManager.downloadFile(
         base64toUint8Array(await DeviceManager.loadWidevineDevice(widevine_device)),
         widevine_device + ".wvd"
+    )
+});
+
+const remote_download = document.getElementById('remoteDownload');
+remote_download.addEventListener('click', async function() {
+    const remote_cdm = await RemoteCDMManager.getSelectedRemoteCDM();
+    SettingsManager.downloadFile(
+        await RemoteCDMManager.loadRemoteCDM(remote_cdm),
+        remote_cdm + ".json"
     )
 });
 
@@ -47,7 +86,12 @@ clear.addEventListener('click', async function() {
 });
 
 document.getElementById('fileInput').addEventListener('click', () => {
-    chrome.runtime.sendMessage({ type: "OPEN_PICKER" });
+    chrome.runtime.sendMessage({ type: "OPEN_PICKER_WVD" });
+    window.close();
+});
+
+document.getElementById('remoteInput').addEventListener('click', () => {
+    chrome.runtime.sendMessage({ type: "OPEN_PICKER_REMOTE" });
     window.close();
 });
 
@@ -117,7 +161,10 @@ function checkLogs() {
 document.addEventListener('DOMContentLoaded', async function () {
     enabled.checked = await SettingsManager.getEnabled();
     SettingsManager.setDarkMode(await SettingsManager.getDarkMode());
+    await SettingsManager.setSelectedDeviceType(await SettingsManager.getSelectedDeviceType());
     await DeviceManager.loadSetAllWidevineDevices();
     await DeviceManager.selectWidevineDevice(await DeviceManager.getSelectedWidevineDevice());
+    await RemoteCDMManager.loadSetAllRemoteCDMs();
+    await RemoteCDMManager.selectRemoteCDM(await RemoteCDMManager.getSelectedRemoteCDM());
     checkLogs();
 });

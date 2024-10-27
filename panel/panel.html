@@ -12,23 +12,46 @@
     </div>
     <fieldset>
         <legend>Settings</legend>
-        <!-- Enabled -->
-        <input type="checkbox" id="enabled">
-        <label for="enabled"> Enabled</label>
-        <!-- Dark mode -->
-        <label class="switch">
-            <input type="checkbox" id="darkModeToggle">
-            <span class="slider"></span>
-        </label>
-        <label for="enabled"> Dark mode</label>
+        <div id="settings">
+            <!-- Enabled -->
+            <div>
+                <input type="checkbox" id="enabled">
+                <label for="enabled"> Enabled</label>
+            </div>
+            <!-- Dark mode -->
+            <div>
+                <label class="switch">
+                    <input type="checkbox" id="darkModeToggle">
+                    <span class="slider"></span>
+                </label>
+                <label for="enabled"> Dark mode</label>
+            </div>
+            <!-- Type select -->
+            <div id="type-select">
+                <a>Device Type:</a><br>
+                <input type="radio" id="wvd_select" name="cdm_type" value="wvd">
+                <label for="wvd_select">Widevine Device</label><br>
+                <input type="radio" id="remote_select" name="cdm_type" value="remote">
+                <label for="remote_select">Remote CDM</label><br>
+            </div>
+        </div>
         <fieldset id="wvd">
             <legend>Widevine Device</legend>
-            <button type="button" id="fileInput">Choose File</button><br>
+            <button type="button" id="fileInput">Choose File</button>
+            <button type="button" id="remove">Remove</button>
+            <button type="button" id="download">Download</button><br>
             <label>
                 <select id="wvd-combobox"></select>
-            </label><br>
-            <button type="button" id="remove">Remove</button>
-            <button type="button" id="download">Download</button>
+            </label>
+        </fieldset>
+        <fieldset id="remote">
+            <legend>Remote CDM</legend>
+            <button type="button" id="remoteInput">Choose remote.json</button>
+            <button type="button" id="remoteRemove">Remove</button>
+            <button type="button" id="remoteDownload">Download</button><br>
+            <label>
+                <select id="remote-combobox"></select>
+            </label>
         </fieldset>
     </fieldset>
     <fieldset>

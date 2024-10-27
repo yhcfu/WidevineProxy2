@@ -11,6 +11,7 @@ Modifies the challenge before it reaches the web player and obtains the decrypti
 
 ## Widevine Devices
 This addon requires a Widevine Device file to work, which is not provided by this project.
++ Use an existing Remote CDM like [this one](https://remote-cdm.cdrm-project.com/remote_cdm)
 + Follow [this](https://forum.videohelp.com/threads/408031) guide if you want to dump your own device.
 + Ready-to-use Widevine Devices can be found on the [VideoHelp forum](https://forum.videohelp.com/forums/48).
 
@@ -36,9 +37,21 @@ This addon requires a Widevine Device file to work, which is not provided by thi
     3. Click `Load Temporary Add-on...` and select the downloaded file
 
 ## Setup
-+ Once installed, open the extension, click `Choose File` and select your Widevine Device file.
+### Widevine Device
+If you only have a `device_client_id_blob` and `device_private_key`, run this command to create a .wvd file:
+```
+pywidevine create-device -k device_private_key -c device_client_id_blob -t "ANDROID" -l 3
+```
+Now, open the extension, click `Choose File` and select your Widevine Device file.
+
+### Remote CDM
+If you don't already have a `remote.json` file, open the API URL in the browser (if provided) and save the response as `remote.json`. \ n
+Now, open the extension, click `Choose remote.json` and select the json file provided by your API.
+
+
++ Select the type of device you're using in the top right hand corner
 + The files are saved in the extension's `chrome.storage.sync` storage and will be synchronized across any browsers into which the user is signed in with their Google account.
-+ Due to the sync storage limit of 100KB, the maximum number of installable devices at the same time is ~30.
++ The maximum number of Widevine devices is ~25 **OR** ~200 Remote CDMs
 + Check `Enabled` to activate the message interception and you're done.
 
 ## Usage
@@ -63,7 +76,6 @@ This automatically means that the license server is blocking your CDM and that y
 
 ## Issues
 + DRM playback won't work when the extension is disabled and EME Logger is active. This is caused by my fix for dealing with EME Logger interference (solutions are welcome).
-+ Having the extension installed causes the UnRAID dashboard not to load
 
 ## Demo
 [Widevineproxy2.webm](https://github.com/user-attachments/assets/8f51cee3-50e2-4aa4-b244-afa2d0b2987e)
