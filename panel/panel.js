@@ -104,24 +104,34 @@ function appendLog(result) {
     const date = new Date(result.timestamp * 1000);
     const date_string = date.toLocaleString();
 
-    key_container.innerHTML += `
-                <div class="log-container">
-                    <button class="toggleButton">+</button>
-                    <div class="expandableDiv collapsed">
-                        <label class="always-visible right-bound">
-                            URL:<input id="url" type="text" class="text-box" value="${result.url}">
-                        </label>
-                        <label class="expanded-only right-bound">
-                            PSSH:<input id="pssh" type="text" class="text-box" value="${result.pssh_data}">
-                        </label>
-                        <label class="expanded-only right-bound">
-                            Keys:<input id="keys" type="text" class="text-box" value="${key_string}">
-                        </label>
-                        <label class="expanded-only right-bound">
-                            Date:<input id="date" type="text" class="text-box" value="${date_string}">
-                        </label>
-                    </div>
-                </div>`
+    // Create a container for the log entry
+    const logContainer = document.createElement('div');
+    logContainer.classList.add('log-container');
+    logContainer.innerHTML = `
+        <button class="toggleButton">+</button>
+        <div class="expandableDiv collapsed">
+            <label class="always-visible right-bound">
+                URL:<input type="text" class="text-box" value="${result.url}">
+            </label>
+            <label class="expanded-only right-bound">
+                PSSH:<input type="text" class="text-box" value="${result.pssh_data}">
+            </label>
+            <label class="expanded-only right-bound">
+                Keys:<input type="text" class="text-box keys-field" value="${key_string}">
+            </label>
+            <label class="expanded-only right-bound">
+                Date:<input type="text" class="text-box" value="${date_string}">
+            </label>
+        </div>`;
+
+    // Append the log container to the key container
+    key_container.appendChild(logContainer);
+
+    // Add event listener to the newly added "Keys" input
+    const keysInput = logContainer.querySelector('.keys-field');
+    keysInput.addEventListener('click', () => {
+        navigator.clipboard.writeText(key_string)
+    });
 }
 
 function applyListeners() {
