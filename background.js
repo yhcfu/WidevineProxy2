@@ -16,8 +16,34 @@ import { RemoteCdm } from "./remote_cdm.js";
 
 const { LicenseType, SignedMessage, LicenseRequest, License } = protobuf.roots.default.license_protocol;
 
+let manifests = new Map();
+let requests = new Map();
 let sessions = new Map();
 let logs = [];
+
+chrome.webRequest.onBeforeSendHeaders.addListener(
+    function(details) {
+        if (details.method === "GET") {
+            if (!requests.has(details.url)) {
+                const headers = details.requestHeaders
+                    .filter(item => !(
+                        item.name.startsWith('sec-ch-ua') ||
+                        item.name.startsWith('Sec-Fetch') ||
+                        item.name.startsWith('Accept-') ||
+                        item.name.startsWith('Host') ||
+                        item.name === "Connection"
+                    )).reduce((acc, item) => {
+                        acc[item.name] = item.value;
+                        return acc;
+                    }, {});
+                console.log(headers);
+                requests.set(details.url, headers);
+            }
+        }
+    },
+    {urls: ["<all_urls>"]},
+    ['requestHeaders', chrome.webRequest.OnSendHeadersOptions.EXTRA_HEADERS].filter(Boolean)
+);
 
 async function parseClearKey(body, sendResponse, tab_url) {
     const clearkey = JSON.parse(atob(body));
@@ -35,13 +61,14 @@ async function parseClearKey(body, sendResponse, tab_url) {
         return;
     }
 
-    console.log("[WidevineProxy2]", "CLEARKEY KEYS", formatted_keys);
+    console.log("[WidevineProxy2]", "CLEARKEY KEYS", formatted_keys, tab_url);
     const log = {
         type: "CLEARKEY",
         pssh_data: pssh_data,
         keys: formatted_keys,
         url: tab_url,
-        timestamp: Math.floor(Date.now() / 1000)
+        timestamp: Math.floor(Date.now() / 1000),
+        manifests: manifests.has(tab_url) ? manifests.get(tab_url) : []
     }
     logs.push(log);
 
@@ -95,7 +122,7 @@ async function parseLicense(body, sendResponse, tab_url) {
     const signed_license_message = SignedMessage.decode(license);
 
     if (signed_license_message.type !== SignedMessage.MessageType.LICENSE) {
-        console.log("[WidevineProxy2]", "INVALID_MESSAGE_TYPE", signed_license_message.type.toString())
+        console.log("[WidevineProxy2]", "INVALID_MESSAGE_TYPE", signed_license_message.type.toString());
         sendResponse();
         return;
     }
@@ -118,7 +145,8 @@ async function parseLicense(body, sendResponse, tab_url) {
         pssh_data: pssh,
         keys: keys,
         url: tab_url,
-        timestamp: Math.floor(Date.now() / 1000)
+        timestamp: Math.floor(Date.now() / 1000),
+        manifests: manifests.has(tab_url) ? manifests.get(tab_url) : []
     }
     logs.push(log);
     await AsyncLocalStorage.setStorage({[pssh]: log});
@@ -173,7 +201,7 @@ async function parseLicenseRemote(body, sendResponse, tab_url) {
     const signed_license_message = SignedMessage.decode(license);
 
     if (signed_license_message.type !== SignedMessage.MessageType.LICENSE) {
-        console.log("[WidevineProxy2]", "INVALID_MESSAGE_TYPE", signed_license_message.type.toString())
+        console.log("[WidevineProxy2]", "INVALID_MESSAGE_TYPE", signed_license_message.type.toString());
         sendResponse();
         return;
     }
@@ -200,7 +228,7 @@ async function parseLicenseRemote(body, sendResponse, tab_url) {
     await remote_cdm.parse_license(session_id.id, body);
     const returned_keys = await remote_cdm.get_keys(session_id.id, "CONTENT");
     await remote_cdm.close(session_id.id);
-    
+
     if (returned_keys.length === 0) {
         sendResponse();
         return;
@@ -214,7 +242,8 @@ async function parseLicenseRemote(body, sendResponse, tab_url) {
         pssh_data: session_id.pssh,
         keys: keys,
         url: tab_url,
-        timestamp: Math.floor(Date.now() / 1000)
+        timestamp: Math.floor(Date.now() / 1000),
+        manifests: manifests.has(tab_url) ? manifests.get(tab_url) : []
     }
     logs.push(log);
     await AsyncLocalStorage.setStorage({[session_id.pssh]: log});
@@ -225,10 +254,13 @@ async function parseLicenseRemote(body, sendResponse, tab_url) {
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     (async () => {
+        const tab_url = sender.tab ? sender.tab.url : null;
+
         switch (message.type) {
             case "REQUEST":
                 if (!await SettingsManager.getEnabled()) {
                     sendResponse(message.body);
+                    manifests.clear();
                     return;
                 }
 
@@ -254,10 +286,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             case "RESPONSE":
                 if (!await SettingsManager.getEnabled()) {
                     sendResponse(message.body);
+                    manifests.clear();
                     return;
                 }
 
-                const tab_url = sender.tab ? sender.tab.url : null;
                 try {
                     await parseClearKey(message.body, sendResponse, tab_url);
                     return;
@@ -294,7 +326,26 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 break;
             case "CLEAR":
                 logs = [];
+                manifests.clear()
                 break;
+            case "MANIFEST":
+                const parsed = JSON.parse(message.body);
+                const element = {
+                    type: parsed.type,
+                    url: parsed.url,
+                    headers: requests.has(parsed.url) ? requests.get(parsed.url) : [],
+                };
+
+                if (!manifests.has(tab_url)) {
+                    manifests.set(tab_url, [element]);
+                } else {
+                    let elements = manifests.get(tab_url);
+                    if (!elements.some(e => e.url === parsed.url)) {
+                        elements.push(element);
+                        manifests.set(tab_url, elements);
+                    }
+                }
+                sendResponse();
         }
     })();
     return true;

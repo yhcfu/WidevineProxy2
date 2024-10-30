@@ -1,10 +1,10 @@
 # WidevineProxy2
 An extension-based proxy for Widevine EME challenges and license messages. \
-Modifies the challenge before it reaches the web player and obtains the decryption keys from the response.
+Modifies the challenge before it reaches the web player and retrieves the decryption keys from the response.
 
 ## Features
 + User-friendly / GUI-based
-+ Bypasses one-time tokens, hashes and license wrapping
++ Bypasses one-time tokens, hashes, and license wrapping
 + JavaScript native Widevine implementation
 + Supports Widevine Device files
 + Manifest V3 compliant
@@ -46,10 +46,10 @@ Now, open the extension, click `Choose File` and select your Widevine Device fil
 
 ### Remote CDM
 If you don't already have a `remote.json` file, open the API URL in the browser (if provided) and save the response as `remote.json`. \
-Now, open the extension, click `Choose remote.json` and select the json file provided by your API.
+Now, open the extension, click `Choose remote.json` and select the JSON file provided by your API.
 
 
-+ Select the type of device you're using in the top right hand corner
++ Select the type of device you're using in the top right-hand corner
 + The files are saved in the extension's `chrome.storage.sync` storage and will be synchronized across any browsers into which the user is signed in with their Google account.
 + The maximum number of Widevine devices is ~25 **OR** ~200 Remote CDMs
 + Check `Enabled` to activate the message interception and you're done.
@@ -62,7 +62,7 @@ Keys are saved:
 > [!NOTE]  
 > The video will not play when the interception is active, as the Widevine CDM library isn't able to decrypt the Android CDM license.
 
-+ Click the `+` button to expand the section to reveal the PSSH and keys. 
++ Click the `+` button to expand the section to reveal the PSSH and keys.
 
 ## FAQ
 > What if I'm unable to get the keys?

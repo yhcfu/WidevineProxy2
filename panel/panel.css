@@ -4,15 +4,8 @@ body {
     color: black;
     width: 400px;
 }
-button:not(.toggleButton), select {
-    padding: 4px;
-}
 .toggleButton {
     width: 24px;
-}
-button, select {
-    background-color: #e1e1e1;
-    border: none;
 }
 select {
     max-width: 330px;
@@ -21,11 +14,8 @@ select {
     outline: none;
     width: 80%;
 }
-button:hover, select:hover {
-    background-color: #c3c3c3;
-}
-button, select, fieldset, .text-box {
-    border-radius: 7px;
+#downloader-name {
+    width: 160px;
 }
 
 
@@ -40,7 +30,6 @@ button, select, fieldset, .text-box {
 .dark-mode button, .dark-mode select {
     background-color: #222;
     color: #D5D5D5;
-    border-color: #222;
 }
 .dark-mode button:hover, .dark-mode select:hover {
     background-color: #323232;
@@ -50,7 +39,6 @@ button, select, fieldset, .text-box {
 }
 .dark-mode .text-box {
     background-color: #323232;
-    border-color: #535353;
     color: #D5D5D5;
 }
 
@@ -134,7 +122,6 @@ input:checked + .slider:before {
     width: 100%;
     overflow: hidden;
     background-color: lightblue;
-    border-radius: 7px;
     padding: 0;
 }
 .expandableDiv.expanded {

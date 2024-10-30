@@ -326,6 +326,24 @@ export class SettingsManager {
                 break;
         }
     }
+
+    static async saveUseShakaPackager(use_shaka) {
+        await AsyncSyncStorage.setStorage({ use_shaka: use_shaka });
+    }
+
+    static async getUseShakaPackager() {
+        const result = await AsyncSyncStorage.getStorage(["use_shaka"]);
+        return result["use_shaka"] ?? true;
+    }
+
+    static async saveExecutableName(exe_name) {
+        await AsyncSyncStorage.setStorage({ exe_name: exe_name });
+    }
+
+    static async getExecutableName() {
+        const result = await AsyncSyncStorage.getStorage(["exe_name"]);
+        return result["exe_name"] ?? "N_m3u8DL-RE";
+    }
 }
 
 export function intToUint8Array(num) {
