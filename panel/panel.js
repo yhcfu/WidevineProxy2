@@ -148,8 +148,8 @@ async function appendLog(result) {
             <label class="expanded-only right-bound">
                 Date:<input type="text" class="text-box" value="${date_string}">
             </label>
-            ${result.manifests.length > 0 ? `<label class="expanded-only right-bound">
-                Manifest:<select id="manifest" class="text-box"></select>
+            ${result.manifests.length > 0 ? `<label class="expanded-only right-bound manifest-copy">
+                <a href="#" title="Click to copy">Manifest:</a><select id="manifest" class="text-box"></select>
             </label>
             <label class="expanded-only right-bound command-copy">
                 <a href="#" title="Click to copy">Cmd:</a><input type="text" id="command" class="text-box">
@@ -173,6 +173,11 @@ async function appendLog(result) {
             select.add(option);
         });
         command.value = await createCommand(select.value, key_string);
+
+        const manifest_copy = logContainer.querySelector('.manifest-copy');
+        manifest_copy.addEventListener('click', () => {
+            navigator.clipboard.writeText(JSON.parse(select.value).url);
+        });
 
         const command_copy = logContainer.querySelector('.command-copy');
         command_copy.addEventListener('click', () => {
