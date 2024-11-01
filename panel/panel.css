@@ -17,6 +17,9 @@ select {
 #downloader-name {
     width: 160px;
 }
+#export {
+    margin-top: 5px;
+}
 
 
 /* Dark mode */

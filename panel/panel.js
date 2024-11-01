@@ -1,6 +1,6 @@
 import "../protobuf.min.js";
 import "../license_protocol.js";
-import { base64toUint8Array, DeviceManager, RemoteCDMManager, SettingsManager } from "../util.js";
+import {AsyncLocalStorage, base64toUint8Array, stringToUint8Array, DeviceManager, RemoteCDMManager, SettingsManager} from "../util.js";
 
 const key_container = document.getElementById('key-container');
 
@@ -28,6 +28,12 @@ remote_select.addEventListener('change', async function (){
     if (remote_select.checked) {
         await SettingsManager.saveSelectedDeviceType("REMOTE");
     }
+});
+
+const export_button = document.getElementById('export');
+export_button.addEventListener('click', async function() {
+    const logs = await AsyncLocalStorage.getStorage(null);
+    SettingsManager.downloadFile(stringToUint8Array(JSON.stringify(logs)), "logs.json");
 });
 // ======================================
 
