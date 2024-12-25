@@ -97,7 +97,7 @@ class Evaluator {
                 const listeners = store[type];
 
                 let wrappedListener = listener;
-                if (type === "message" && !!listener && !listener._isWrapped) {
+                if (type === "message" && !!listener && !listener._isWrapped && (typeof MediaKeyMessageEvent !== 'undefined')) {
                     wrappedListener = async function(event) {
                         if (event instanceof MediaKeyMessageEvent) {
                             if (event._isCustomEvent) {
