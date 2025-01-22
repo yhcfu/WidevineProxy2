@@ -7,7 +7,8 @@
     "tabs",
     "storage",
     "unlimitedStorage",
-    "webRequest"
+    "webRequest",
+    "clipboardWrite"
   ],
   "host_permissions": [
     "*://*/*"
