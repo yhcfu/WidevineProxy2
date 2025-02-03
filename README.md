@@ -11,7 +11,7 @@ Modifies the challenge before it reaches the web player and retrieves the decryp
 
 ## Widevine Devices
 This addon requires a Widevine Device file to work, which is not provided by this project.
-+ Use an existing Remote CDM like [this one](https://remote-cdm.cdrm-project.com/remote_cdm)
++ Use an existing Remote CDM like [this one](https://github.com/user-attachments/files/18644060/remote.json)
 + Follow [this](https://forum.videohelp.com/threads/408031) guide if you want to dump your own device.
 + Ready-to-use Widevine Devices can be found on the [VideoHelp forum](https://forum.videohelp.com/forums/48).
 
