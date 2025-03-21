@@ -289,7 +289,6 @@ export class SettingsManager {
                     json_file.host,
                     json_file.secret,
                     json_file.device_name ?? json_file.name,
-
                 );
                 const device_name = remote_cdm.get_name();
                 console.log("NAME:", device_name);
