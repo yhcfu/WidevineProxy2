@@ -29,6 +29,9 @@ export class RemoteCdm {
             `${this.host}/${this.device_name}/open`,
             {
                 method: 'GET',
+                headers: {
+                    "X-Secret-Key": this.secret
+                }
             }
         );
         console.log("[WidevineProxy2]", "REMOTE_CDM", "OPEN", open_request.status);
@@ -42,6 +45,9 @@ export class RemoteCdm {
             `${this.host}/${this.device_name}/close/${session_id}`,
             {
                 method: 'GET',
+                headers: {
+                    "X-Secret-Key": this.secret
+                }
             }
         );
         console.log("[WidevineProxy2]", "REMOTE_CDM", "CLOSE", close_request.status);
@@ -58,6 +64,7 @@ export class RemoteCdm {
                 method: "POST",
                 headers: {
                     "content-type": "application/json",
+                    "X-Secret-Key": this.secret
                 },
                 body: JSON.stringify({
                     session_id: session_id,
@@ -79,6 +86,7 @@ export class RemoteCdm {
                 method: "POST",
                 headers: {
                     "content-type": "application/json",
+                    "X-Secret-Key": this.secret
                 },
                 body: JSON.stringify({
                     session_id: session_id,
@@ -96,6 +104,7 @@ export class RemoteCdm {
                 method: "POST",
                 headers: {
                     "content-type": "application/json",
+                    "X-Secret-Key": this.secret
                 },
                 body: JSON.stringify({
                     session_id: session_id
