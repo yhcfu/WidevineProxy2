@@ -1,0 +1,101 @@
+:host,
+:root {
+    --wvp-overlay-bg: rgba(12, 14, 32, 0.9);
+    --wvp-overlay-border: rgba(255, 255, 255, 0.2);
+    --wvp-overlay-text: #f5f7fb;
+    --wvp-overlay-accent: #7c4dff;
+}
+
+.wvp-overlay-shell {
+    position: fixed;
+    top: 12px;
+    right: 12px;
+    z-index: 2147483647;
+    font-family: "Segoe UI", "Hiragino Sans", sans-serif;
+    color: var(--wvp-overlay-text);
+}
+
+
+.wvp-overlay-pill {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: rgba(20, 24, 50, 0.82);
+    border: 1px solid rgba(124, 77, 255, 0.25);
+    border-radius: 999px;
+    padding: 4px 8px 4px 6px;
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.28);
+    backdrop-filter: blur(6px);
+}
+
+.wvp-overlay-close {
+    border: none;
+    background: transparent;
+    color: inherit;
+    font-size: 16px;
+    cursor: pointer;
+    padding: 0 6px;
+    line-height: 1;
+}
+
+.wvp-overlay-close:hover,
+.wvp-overlay-close:focus-visible {
+    color: #fff;
+}
+
+.wvp-overlay-pill-button {
+    border: none;
+    background: var(--wvp-overlay-accent);
+    color: #fff;
+    border-radius: 999px;
+    padding: 5px 12px;
+    display: inline-flex;
+    align-items: center;
+    gap: 9px;
+    cursor: pointer;
+    box-shadow: 0 6px 14px rgba(124, 77, 255, 0.4);
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.wvp-overlay-pill-button:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    box-shadow: none;
+}
+
+.wvp-overlay-pill-button:not(:disabled):hover,
+.wvp-overlay-pill-button:not(:disabled):focus-visible {
+    transform: translateY(-1px);
+    box-shadow: 0 8px 18px rgba(124, 77, 255, 0.55);
+}
+
+.wvp-overlay-pill-icon {
+    font-size: 15px;
+    animation: wvp-overlay-pulse 3s infinite;
+}
+
+.wvp-overlay-pill-text {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    line-height: 1.2;
+}
+
+.wvp-overlay-status {
+    font-size: 12px;
+    margin: 0;
+}
+
+
+.wvp-overlay-hint {
+    font-size: 10px;
+    opacity: 0.75;
+}
+
+@keyframes wvp-overlay-pulse {
+    0% { transform: scale(1); opacity: 1; }
+    50% { transform: scale(1.05); opacity: 0.75; }
+    100% { transform: scale(1); opacity: 1; }
+}

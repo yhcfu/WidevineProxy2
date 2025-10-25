@@ -36,6 +36,10 @@ export class RemoteCdm {
         );
         console.log("[WidevineProxy2]", "REMOTE_CDM", "OPEN", open_request.status);
         const open_json = await open_request.json();
+        if (!open_json?.data?.session_id) {
+            console.error("REMOTE_CDM OPEN エラー", open_json);
+            throw new Error("Remote CDM がセッションIDを返却しませんでした。");
+        }
 
         return open_json.data.session_id;
     }
@@ -75,6 +79,10 @@ export class RemoteCdm {
         )
         console.log("[WidevineProxy2]", "REMOTE_CDM", "GET_LICENSE_CHALLENGE", license_request.status);
         const license_request_json = await license_request.json();
+        if (!license_request_json?.data?.challenge_b64) {
+            console.error("REMOTE_CDM GET_LICENSE_CHALLENGE エラー", license_request_json);
+            throw new Error("Remote CDM が challenge_b64 を返却しませんでした。");
+        }
 
         return license_request_json.data.challenge_b64;
     }
@@ -113,6 +121,10 @@ export class RemoteCdm {
         )
         console.log("[WidevineProxy2]", "REMOTE_CDM", "GET_KEYS", key_request.status);
         const key_request_json = await key_request.json();
+        if (!Array.isArray(key_request_json?.data?.keys)) {
+            console.error("REMOTE_CDM GET_KEYS エラー", key_request_json);
+            throw new Error("Remote CDM が鍵一覧を返却しませんでした。");
+        }
 
         return key_request_json.data.keys;
     }

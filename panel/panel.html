@@ -1,11 +1,13 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ja">
 <head>
-    <title></title>
+    <meta charset="utf-8">
+    <title>WidevineProxy2 Panel</title>
     <script type="module" src="panel.js" defer></script>
     <link rel="stylesheet" href="panel.css">
 </head>
 <body style="min-width: 200px;">
+    <div id="toast-container" class="toast-container" aria-live="polite" aria-atomic="false"></div>
     <div class="header">
         <img src="../images/icon-128.png" alt="WidevineProxy Icon" width="64"/>
         <img id="textImage" src="../images/proxy_text.png" alt="ProxyText" width="200"/>
@@ -35,21 +37,44 @@
                 <label for="remote_select">Remote CDM</label><br>
             </div>
         </div>
+        <div id="host-status">
+            <span>Native Host:</span>
+            <span id="host-status-indicator" class="status-pill status-pill--disconnected">Disconnected</span>
+            <button type="button" id="host-retry" class="status-retry">Retry</button>
+        </div>
+        <div id="host-status-message" class="status-message"></div>
+        <fieldset id="native-jobs">
+            <legend>Native Jobs</legend>
+            <div class="job-toolbar">
+                <div class="job-filter" role="group" aria-label="ジョブ表示期間">
+                    <button type="button" class="job-filter__button job-filter__button--active" data-job-filter="today">今日</button>
+                    <button type="button" class="job-filter__button" data-job-filter="yesterday">昨日</button>
+                    <button type="button" class="job-filter__button" data-job-filter="all">すべて</button>
+                </div>
+                <button type="button" id="job-history-toggle" class="job-history__button">過去分も表示</button>
+            </div>
+            <p id="job-history-hint" class="job-history__hint" hidden></p>
+            <div id="native-jobs-list" class="native-jobs-list"></div>
+        </fieldset>
         <fieldset id="wvd">
             <legend>Widevine Device</legend>
-            <button type="button" id="fileInput">Choose File</button>
-            <button type="button" id="remove">Remove</button>
-            <button type="button" id="download">Download</button><br>
-            <label>
+            <div class="device-action-row">
+                <button type="button" id="fileInput">Choose File</button>
+                <button type="button" id="remove">Remove</button>
+                <button type="button" id="download">Download</button>
+            </div>
+            <label class="device-select">
                 <select id="wvd-combobox"></select>
             </label>
         </fieldset>
         <fieldset id="remote">
             <legend>Remote CDM</legend>
-            <button type="button" id="remoteInput">Choose remote.json</button>
-            <button type="button" id="remoteRemove">Remove</button>
-            <button type="button" id="remoteDownload">Download</button><br>
-            <label>
+            <div class="device-action-row">
+                <button type="button" id="remoteInput">Choose remote.json</button>
+                <button type="button" id="remoteRemove">Remove</button>
+                <button type="button" id="remoteDownload">Download</button>
+            </div>
+            <label class="device-select">
                 <select id="remote-combobox"></select>
             </label>
         </fieldset>
@@ -59,6 +84,32 @@
             <label for="use-shaka"> Use Shaka Packager</label><br>
             <label for="downloader-name">Executable name: </label>
             <input type="text" class="text-box" id="downloader-name">
+            <div class="overlay-flag-row">
+                <input type="checkbox" id="overlay-preview-toggle">
+                <label for="overlay-preview-toggle"> Enable download overlay</label>
+            </div>
+            <p class="overlay-flag-hint">Shows the in-page download overlay so you can enqueue jobs directly from the player.</p>
+            <div class="cookie-settings">
+                <label for="cookie-strategy">Cookie strategy:</label>
+                <select id="cookie-strategy">
+                    <option value="browser">Browser (use --cookies-from-browser)</option>
+                    <option value="netscape">Netscape export (manual file)</option>
+                </select>
+            </div>
+            <label for="cookie-profile" class="cookie-label">Browser profile (e.g. chrome:Default)</label>
+            <input type="text" class="text-box" id="cookie-profile" placeholder="chrome:Default">
+            <div class="output-dir-row">
+                <label for="output-dir-preset">保存先ディレクトリ</label>
+                <select id="output-dir-preset" class="text-box">
+                    <option value="preset:movies">ホーム / Movies</option>
+                    <option value="preset:downloads">ホーム / Downloads</option>
+                    <option value="preset:desktop">ホーム / Desktop</option>
+                    <option value="custom">カスタムを入力する</option>
+                </select>
+                <label for="output-dir" class="output-dir-custom-label">カスタムパス</label>
+                <input type="text" class="text-box" id="output-dir" placeholder="~/Movies">
+                <p class="field-hint">プリセットから選ぶか、任意のパスを入力してください。</p>
+            </div>
         </fieldset>
         <button type="button" id="export">Export Logs</button>
     </fieldset>

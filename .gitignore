@@ -1,0 +1,16 @@
+node_modules/
+.pnpm-store/
+
+# Frontend build outputs
+dist/
+
+# Native host build artifacts
+native-host/target/
+native-host/widevineproxy2-host*
+native-host/bin/
+
+# Generated logs & caches
+.DS_Store
+*.log
+*.tmp
+*.swp

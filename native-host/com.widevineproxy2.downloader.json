@@ -1,0 +1,9 @@
+{
+  "name": "com.widevineproxy2.downloader",
+  "description": "WidevineProxy2 Native Messaging Host",
+  "path": "__HOST_BINARY__",
+  "type": "stdio",
+  "allowed_origins": [
+    "chrome-extension://__EXTENSION_ID__/"
+  ]
+}
