@@ -1,4 +1,4 @@
-param(
+﻿﻿param(
     [string]$ExtensionId,
     [switch]$ManifestOnly,
     [string]$BinaryPath,
@@ -12,12 +12,16 @@ param(
 $ErrorActionPreference = "Stop"
 $GuideUrl = "https://github.com/yhcfu/WidevineProxy2/blob/main/docs/getting-started/install-windows.md"
 
-#<
+<#
 .SYNOPSIS
-リポジトリルートから Windows ネイティブホストをセットアップします。
+    リポジトリルートから Windows ネイティブホストをセットアップします。
+
 .DESCRIPTION
-リポジトリを ZIP 展開した直後に実行できるよう、`native-host/bin/windows/` 配下の事前ビルド済みバイナリを探して `native-host/install.ps1`
-へ引き渡します。Extension ID を指定しない場合は、下位スクリプトが chrome://extensions で確認した ID の入力を促します。
+    リポジトリを ZIP 展開した直後に実行できるよう、`native-host/bin/windows/` 配下の事前ビルド済みバイナリを探して `native-host/install.ps1` へ引き渡します。
+    Extension ID を指定しない場合は、下位スクリプトが chrome://extensions で確認した ID の入力を促します。
+
+.NOTES
+    PowerShell のコメントベースヘルプ構文で記述し、`.SYNOPSIS` がコマンドとして解釈されないようにしています。
 #>
 function Invoke-NativeHostInstall {
     param(
@@ -31,7 +35,11 @@ function Invoke-NativeHostInstall {
         [switch]$DisablePolicies
     )
 
-    $root = Split-Path -Parent $MyInvocation.MyCommand.Path
+    $root = if ($MyInvocation.MyCommand.Path) {
+        Split-Path -Parent $MyInvocation.MyCommand.Path
+    } else {
+        Get-Location
+    }
     $installScript = Join-Path $root "native-host/install.ps1"
     if (-not (Test-Path $installScript)) {
         $warn = @"

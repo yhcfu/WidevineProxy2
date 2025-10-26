@@ -13,25 +13,55 @@
 
 ## 🛠 インストール
 
-### Windows でネイティブホストを導入
-1. リポジトリをダウンロード（`Code → Download ZIP`）して任意のフォルダへ展開します。
-2. Chrome で `chrome://extensions/` を開き、`Developer mode` をオンにしてから `Load unpacked` で展開したフォルダを読み込みます。
-3. 表示された拡張カードの `ID` を控えたあと、PowerShell でリポジトリルートに移動します。
-4. 一時的にスクリプトを許可し、セットアップを実行します。
+### Windows でのセットアップ手順
+
+**事前チェック**
+- Microsoft Edge / Google Chrome いずれかをインストール済みであること。
+- `yt-dlp` / `ffmpeg` / `mp4decrypt` をまだ入れていなければ、あとで PowerShell がガイドを出すので指示に従って準備してください。
+
+**拡張の読み込み**
+1. GitHub から ZIP を取得し、任意のフォルダへ展開します。
+2. Chrome/Edge で `chrome://extensions/` を開き、右上の「デベロッパーモード」をオンにします。
+3. 「パッケージ化されていない拡張機能を読み込む」から展開フォルダを選択し、表示された拡張カードの `ID` を控えます（例: `abcdefghijklmnopabcdefghijklmnop`）。
+
+**ネイティブホストの登録**
+1. PowerShell 7 (`pwsh`) を開き、展開したフォルダ（`install-windows-native-host.ps1` がある場所）に移動します。PowerShell 7 のインストール手順は [Microsoft Docs](https://learn.microsoft.com/powershell/scripting/install/installing-powershell) にまとまっています。
+2. 一時的にスクリプト実行を許可し、インストールスクリプトを走らせます。
    ```powershell
    Set-ExecutionPolicy -Scope Process Bypass
-   .\install-windows-native-host.ps1           # プロンプトに従って拡張IDを入力
+   .\install-windows-native-host.ps1
    ```
-5. `chrome://extensions/` → 対象拡張の Service Worker コンソールで `Native host: connected` が表示されれば完了です。
+3. プロンプトに従って拡張 ID を入力します。`yt-dlp` などが PATH にない場合は、自動で導入ガイドが表示されます。
 
-### macOS でネイティブホストを導入
-1. 上記と同様に拡張機能を `Load unpacked` し、表示された Extension ID を控えます。
-2. ターミナルでリポジトリルートに移動し、ルートスクリプトを実行します。
+**動作確認**
+- PowerShell で `native-host\bin\windows\widevineproxy2-host.exe --self-test` を実行し、`pong` が返るか確認します。
+- `chrome://extensions/` → 対象拡張 → 「Service Worker」コンソールに `Native host: connected` と出れば接続成功です。
+- 必要に応じて Windows を再起動し、レジストリの反映や PATH の更新を確実にします。
+
+### macOS でのセットアップ手順
+
+**事前チェック**
+- 最新の Xcode Command Line Tools と Homebrew を導入済みだと便利です。
+- `yt-dlp` / `ffmpeg` / `mp4decrypt` は Homebrew で `brew install yt-dlp ffmpeg bento4` のようにまとめて入れると後が楽になります。
+
+**拡張の読み込み**
+1. Windows と同様に ZIP を展開し、Chrome/Edge で `Load unpacked` を使って読み込みます。
+2. 拡張カードの `ID` を控えておきます。
+
+**ネイティブホストの登録**
+1. ターミナル（PowerShell 7 もしくは bash/zsh）でリポジトリルートに移動し、スクリプトを実行可能にします。
    ```bash
    chmod +x install-macos-native-host.sh
-   ./install-macos-native-host.sh               # プロンプトに従って拡張IDを入力
+   ./install-macos-native-host.sh
    ```
-3. スクリプト完了後、`~/.local/share/WidevineProxy2/widevineproxy2-host --self-test` を実行して `pong` 応答が返るか確認してください。
+2. プロンプトに従って拡張 ID を入力します。入力内容は `native-host/install.ps1` に引き渡され、Chrome 側のマニフェストが自動で書き換わります。
+
+**動作確認**
+- `~/.local/share/WidevineProxy2/widevineproxy2-host --self-test` を実行し、`pong` と応答するかをチェックします。
+- `chrome://extensions/` の Service Worker ログで `Native host: connected` を確認し、問題があれば再度スクリプトを実行してください。
+
+**補足**
+- macOS ではセキュリティポリシーの関係で初回実行時に Gatekeeper の許可が求められる場合があります。その際はシステム環境設定 →「セキュリティとプライバシー」から実行を許可してください。
 
 ## 📚 ドキュメントへの導線
 - Getting Started: `docs/getting-started/overview.md`

@@ -15,6 +15,15 @@ import { WidevineDevice } from "./device.js";
 import { RemoteCdm } from "./remote_cdm.js";
 import { DownloadStrategyRegistry } from "./strategies/registry.js";
 import { DashWidevineStrategy } from "./strategies/dash_widevine.js";
+import { DashClearKeyStrategy } from "./strategies/dash_clearkey.js";
+import { HlsWidevineStrategy } from "./strategies/hls_widevine.js";
+import { HlsFairPlayStrategy } from "./strategies/hls_fairplay.js";
+import { LiveHlsStrategy } from "./strategies/live_hls.js";
+import { HlsClearStrategy } from "./strategies/hls_clear.js";
+import { SmoothStreamingStrategy } from "./strategies/smooth_streaming.js";
+import { ProgressiveStrategy } from "./strategies/progressive.js";
+import { GenericYtDlpStrategy } from "./strategies/generic_ytdlp.js";
+import { isUrlSupportedByYtDlp } from "./supported_sites.js";
 
 const { LicenseType, SignedMessage, LicenseRequest, License } = protobuf.roots.default.license_protocol;
 
@@ -40,18 +49,94 @@ const OFFSCREEN_REASON = "DOM_PARSER";
 const JOB_PAYLOAD_SCHEMA_VERSION = 2;
 const OUTPUT_SLUG_MAX_LENGTH = 60;
 const overlayStateByTab = new Map();
+const overlayLifecycleByTab = new Map();
 const overlaySuppressionByLog = new Map();
 const jobToastTargets = new Map();
+const tabNavigationMetadataByTab = new Map();
+let folderRevealReleaseTimer = null;
 const OVERLAY_SUPPRESSION_MS = 30 * 1000;
 const HOST_JOB_TAB_MAP_KEY = "native_job_tab_targets";
 const HOST_PAYLOAD_WARN_THRESHOLD_BYTES = 512 * 1024;
 const BF_CACHE_ERROR_REGEX = /back\/forward cache/i;
 const RECEIVING_END_ERROR_REGEX = /Receiving end does not exist|No tab with id|frame was removed/i;
+const WEB_NAVIGATION_FILTER = { url: [{ schemes: ["http", "https"] }] };
 const downloadStrategyRegistry = new DownloadStrategyRegistry();
+const OVERLAY_RESET_THROTTLE_MS = 500;
+const OVERLAY_METADATA_BLOCKLIST_HOSTS = new Set([
+    "google.com",
+    "www.google.com",
+    "mail.google.com",
+    "news.google.com",
+    "drive.google.com",
+    "calendar.google.com",
+    "docs.google.com",
+    "accounts.google.com"
+]);
 downloadStrategyRegistry.register(new DashWidevineStrategy({
     schemaVersion: JOB_PAYLOAD_SCHEMA_VERSION,
     helpers: {
         serializeLicenseKeys,
+        deriveOutputSlug,
+        quoteArg
+    }
+}));
+downloadStrategyRegistry.register(new DashClearKeyStrategy({
+    schemaVersion: JOB_PAYLOAD_SCHEMA_VERSION,
+    helpers: {
+        deriveOutputSlug,
+        quoteArg
+    }
+}));
+downloadStrategyRegistry.register(new HlsWidevineStrategy({
+    schemaVersion: JOB_PAYLOAD_SCHEMA_VERSION,
+    helpers: {
+        serializeLicenseKeys,
+        deriveOutputSlug,
+        quoteArg
+    }
+}));
+downloadStrategyRegistry.register(new HlsFairPlayStrategy({
+    schemaVersion: JOB_PAYLOAD_SCHEMA_VERSION,
+    helpers: {
+        serializeLicenseKeys,
+        deriveOutputSlug,
+        quoteArg
+    }
+}));
+downloadStrategyRegistry.register(new LiveHlsStrategy({
+    schemaVersion: JOB_PAYLOAD_SCHEMA_VERSION,
+    helpers: {
+        serializeLicenseKeys,
+        deriveOutputSlug,
+        quoteArg
+    }
+}));
+downloadStrategyRegistry.register(new HlsClearStrategy({
+    schemaVersion: JOB_PAYLOAD_SCHEMA_VERSION,
+    helpers: {
+        serializeLicenseKeys,
+        deriveOutputSlug,
+        quoteArg
+    }
+}));
+downloadStrategyRegistry.register(new SmoothStreamingStrategy({
+    schemaVersion: JOB_PAYLOAD_SCHEMA_VERSION,
+    helpers: {
+        serializeLicenseKeys,
+        deriveOutputSlug,
+        quoteArg
+    }
+}));
+downloadStrategyRegistry.register(new ProgressiveStrategy({
+    schemaVersion: JOB_PAYLOAD_SCHEMA_VERSION,
+    helpers: {
+        deriveOutputSlug,
+        quoteArg
+    }
+}));
+downloadStrategyRegistry.register(new GenericYtDlpStrategy({
+    schemaVersion: JOB_PAYLOAD_SCHEMA_VERSION,
+    helpers: {
         deriveOutputSlug,
         quoteArg
     }
@@ -598,6 +683,11 @@ async function persistCapturedKeyLog(log, options = {}) {
     logs.push(enriched);
     if (typeof options.tabId === "number" && enriched?.url) {
         rememberTabResolution(options.tabId, enriched.url);
+        updateOverlayLifecycle(options.tabId, {
+            phase: "probing",
+            lastKnownUrl: enriched.url,
+            lastProbePreparedAt: Date.now()
+        });
     }
     pruneLogMemory();
     rememberManifestForLog(enriched);
@@ -614,6 +704,416 @@ async function persistCapturedKeyLog(log, options = {}) {
         }
     }
     return enriched;
+}
+
+/**
+ * @description サイトメタデータから汎用ダウンロード候補を生成・保存します。
+ * @param {{url?: string|null, title?: string|null}} payload 受信したメタ情報です。
+ * @param {chrome.runtime.MessageSender} sender 発信元情報です。
+ * @returns {Promise<string>} 処理結果(JSON文字列)です。
+ */
+async function handleGenericPageMetadata(payload, sender) {
+    const response = {
+        ok: false,
+        reason: "",
+        forceGeneric: false
+    };
+    const tabId = sender?.tab?.id ?? null;
+    const reportedUrl = payload?.url || sender?.tab?.url || null;
+    const reportedTitle = payload?.title || sender?.tab?.title || null;
+    const previousMetadata = getTabPageMetadata(tabId);
+    const previousUrl = previousMetadata?.url || null;
+    const mediaHintsProvided = Object.prototype.hasOwnProperty.call(payload || {}, "mediaHints");
+    const videoHints = payload?.mediaHints || {};
+    const pendingProbeRaw = Boolean(videoHints.pendingProbe);
+    const probesExhausted = Boolean(videoHints.probesExhausted);
+    const pendingProbe = pendingProbeRaw && !probesExhausted;
+    const hasInlineVideo = mediaHintsProvided ? Boolean(videoHints.hasInlineVideo) : true;
+    const blocklistedHost = isOverlayMetadataBlockedHost(reportedUrl);
+    if (typeof tabId === "number" && Boolean(previousUrl && reportedUrl && previousUrl !== reportedUrl)) {
+        await resetOverlayForNavigation(tabId, {
+            url: reportedUrl,
+            navigationEvent: "metadata:url-change",
+            reason: "metadata-url-change"
+        });
+    }
+    rememberTabPageMetadata(tabId, { url: reportedUrl, title: reportedTitle });
+    if (mediaHintsProvided && typeof tabId === "number") {
+        updateOverlayLifecycle(tabId, {
+            phase: hasInlineVideo ? "probing" : (pendingProbe ? "probing" : (probesExhausted ? "awaiting-fallback" : "idle")),
+            lastVideoCheckAt: Date.now(),
+            lastKnownUrl: reportedUrl,
+            probesPending: pendingProbe,
+            probesExhausted: Boolean(videoHints.probesExhausted),
+            lastProbeRequestedAt: videoHints.lastProbeRequestedAt || null,
+            lastSuccessfulProbeAt: videoHints.lastSuccessfulProbeAt || null,
+            lastProbeReason: videoHints.lastProbeReason || null
+        });
+    }
+    if (mediaHintsProvided && !hasInlineVideo) {
+        if (pendingProbe) {
+            response.reason = "video-probe-pending";
+            return JSON.stringify(response);
+        }
+        if (probesExhausted && blocklistedHost) {
+            if (typeof tabId === "number") {
+                await resetOverlayForNavigation(tabId, {
+                    url: reportedUrl,
+                    navigationEvent: "media-hints:blocklist",
+                    reason: "blocked-host",
+                    phase: "idle",
+                    force: true
+                });
+            }
+            response.reason = "blocked-host";
+            return JSON.stringify(response);
+        }
+        // video 要素が見つからなかったがブロック対象でもないため、フォールバック生成を許可する。
+        if (typeof tabId === "number") {
+            updateOverlayLifecycle(tabId, {
+                phase: "fallback-ready",
+                lastFallbackEvaluatedAt: Date.now()
+            });
+        }
+    }
+    const preferredUrl = await resolveSupportedPageUrl(payload?.url, sender?.tab?.url);
+    if (!preferredUrl) {
+        response.reason = "unsupported";
+        return JSON.stringify(response);
+    }
+    const logKey = buildGenericLogKey(preferredUrl);
+    const tabTitle = reportedTitle;
+    const alreadyTracked = logs.some((entry) => entry?.pssh_data === logKey);
+    if (alreadyTracked) {
+        await updateGenericLogMetadata(logKey, {
+            pageTitle: tabTitle || null,
+            url: preferredUrl
+        });
+        await rehydrateOverlayForPssh(logKey, { tabId, tabTitle, tabUrl: preferredUrl });
+        response.ok = true;
+        response.forceGeneric = true;
+        response.reason = "rehydrated";
+        return JSON.stringify(response);
+    }
+    const genericLog = createGenericLogFromMetadata({ url: preferredUrl, title: tabTitle });
+    await persistCapturedKeyLog(genericLog, { tabId, tabTitle });
+    if (typeof tabId === "number") {
+        updateOverlayLifecycle(tabId, {
+            phase: "fallback-ready",
+            lastFallbackGeneratedAt: Date.now(),
+            lastKnownUrl: preferredUrl
+        });
+    }
+    response.ok = true;
+    response.forceGeneric = true;
+    response.reason = "created";
+    return JSON.stringify(response);
+}
+
+/**
+ * @description コンテンツスクリプトからのナビゲーション通知を処理します。
+ * @param {{url?: string|null, reason?: string|null, event?: string|null}} payload ナビゲーション情報です。
+ * @param {chrome.runtime.MessageSender} sender 発信元情報です。
+ * @returns {Promise<string>} 処理結果(JSON文字列)です。
+ */
+async function handleOverlayNavigationSignal(payload, sender) {
+    const tabId = sender?.tab?.id ?? payload?.tabId ?? null;
+    if (typeof tabId !== "number") {
+        return JSON.stringify({ ok: false, reason: "no-tab" });
+    }
+    const nextUrl = payload?.url || sender?.tab?.url || null;
+    await resetOverlayForNavigation(tabId, {
+        url: nextUrl,
+        navigationEvent: payload?.event || null,
+        reason: payload?.reason || "page-navigation"
+    });
+    return JSON.stringify({ ok: true });
+}
+
+/**
+ * @description yt-dlp フォールバック用のログオブジェクトを生成します。
+ * @param {{url: string, title?: string|null}} options 生成元情報です。
+ * @returns {object} ログエントリです。
+ */
+function createGenericLogFromMetadata({ url, title = null }) {
+    const logKey = buildGenericLogKey(url);
+    const timestamp = Math.floor(Date.now() / 1000);
+    const manifestDetails = {
+        type: "GENERIC",
+        drmSystems: [],
+        encryption: "clear",
+        segmentFormat: null,
+        notes: ["yt-dlp fallback"]
+    };
+    return {
+        type: "GENERIC",
+        pssh_data: logKey,
+        keys: [],
+        url,
+        timestamp,
+        manifests: [
+            {
+                type: "GENERIC",
+                url,
+                headers: {},
+                details: manifestDetails
+            }
+        ],
+        pageTitle: title || null
+    };
+}
+
+/**
+ * @description ログ情報とマニフェスト情報からストラテジーコンテキストをサイト判定で補強します。
+ * @param {import("./strategies/base.js").StrategyContext} context 変換元コンテキストです。
+ * @returns {Promise<import("./strategies/base.js").StrategyContext>} サイトプロファイル適用後のコンテキストです。
+ */
+async function attachSiteProfileToStrategyContext(context) {
+    const siteProfile = await resolveYtDlpSiteProfile(context.log, context.manifest);
+    if (!siteProfile) {
+        return { ...context, siteProfile: null };
+    }
+    if (siteProfile.forcedStrategyId !== "generic-ytdlp") {
+        return { ...context, siteProfile };
+    }
+    const canonicalUrl = siteProfile.canonicalUrl;
+    if (!canonicalUrl) {
+        return { ...context, siteProfile };
+    }
+
+    // GENERIC へ切り替える際はマニフェスト/ログ双方を安全なクリア扱いに整形する。
+    const manifestDetails = buildGenericManifestDetails(context?.manifest?.details);
+    const genericManifest = {
+        ...(context.manifest || {}),
+        type: "GENERIC",
+        url: canonicalUrl,
+        pageTitle: context?.manifest?.pageTitle || context?.log?.pageTitle || siteProfile.titleHint || null,
+        headers: context?.manifest?.headers || {},
+        details: manifestDetails
+    };
+    const manifestEntry = {
+        type: "GENERIC",
+        url: canonicalUrl,
+        headers: genericManifest.headers,
+        details: manifestDetails
+    };
+    const existingManifests = Array.isArray(context?.log?.manifests) ? context.log.manifests : [];
+    const dedupedManifests = [
+        manifestEntry,
+        ...existingManifests.filter((entry) => entry?.url !== canonicalUrl)
+    ];
+    const genericLog = {
+        ...(context.log || {}),
+        type: "GENERIC",
+        url: canonicalUrl,
+        pageTitle: context?.log?.pageTitle || siteProfile.titleHint || genericManifest.pageTitle || null,
+        manifests: dedupedManifests,
+        keys: []
+    };
+    return {
+        ...context,
+        manifest: genericManifest,
+        log: genericLog,
+        keys: [],
+        siteProfile
+    };
+}
+
+/**
+ * @description GENERIC マニフェスト用の標準詳細を構築します。
+ * @param {object|null|undefined} sourceDetails 既存の詳細情報です。
+ * @returns {object} GENERIC 用に正規化された詳細です。
+ */
+function buildGenericManifestDetails(sourceDetails = null) {
+    const base = {
+        type: "GENERIC",
+        drmSystems: [],
+        encryption: "clear",
+        segmentFormat: null,
+        notes: ["yt-dlp fallback"]
+    };
+    if (!sourceDetails || typeof sourceDetails !== "object") {
+        return base;
+    }
+    const mergedNotes = Array.from(
+        new Set([...(Array.isArray(sourceDetails.notes) ? sourceDetails.notes : []), ...base.notes])
+    );
+    return {
+        ...sourceDetails,
+        ...base,
+        notes: mergedNotes
+    };
+}
+
+/**
+ * @description ログ/マニフェストから yt-dlp 判定用サイトプロファイルを導出します。
+ * @param {object|null} log 判定対象のログです。
+ * @param {object|null} manifest 判定対象のマニフェストです。
+ * @returns {Promise<{forcedStrategyId: string, canonicalUrl: string, titleHint: string|null}|null>} 判定結果です。
+ */
+async function resolveYtDlpSiteProfile(log, manifest) {
+    const preLabeledGenericUrl = log?.type === "GENERIC"
+        ? (log?.url || log?.sourceUrl || null)
+        : manifest?.type === "GENERIC"
+            ? (manifest?.url || null)
+            : null;
+    if (preLabeledGenericUrl) {
+        return {
+            forcedStrategyId: "generic-ytdlp",
+            canonicalUrl: preLabeledGenericUrl,
+            titleHint: log?.pageTitle || manifest?.pageTitle || null
+        };
+    }
+
+    const candidates = collectCandidateUrlsForSiteProfile(log, manifest);
+    if (candidates.length === 0) {
+        return null;
+    }
+    for (const candidate of candidates) {
+        if (isLikelyAuthHost(candidate)) {
+            continue;
+        }
+        try {
+            if (await isUrlSupportedByYtDlp(candidate)) {
+                return {
+                    forcedStrategyId: "generic-ytdlp",
+                    canonicalUrl: candidate,
+                    titleHint: log?.pageTitle || manifest?.pageTitle || null
+                };
+            }
+        } catch (error) {
+            console.debug("[WidevineProxy2] yt-dlp site profile lookup failed", error);
+        }
+    }
+    return null;
+}
+
+/**
+ * @description ログおよびマニフェストからサイト判定用 URL 候補を抽出します。
+ * @param {object|null} log 抽出元ログです。
+ * @param {object|null} manifest 抽出元マニフェストです。
+ * @returns {Array<string>} 一意な URL 候補配列です。
+ */
+function collectCandidateUrlsForSiteProfile(log, manifest) {
+    const seen = new Set();
+    const push = (value) => {
+        if (!value || typeof value !== "string") {
+            return;
+        }
+        const trimmed = value.trim();
+        if (!trimmed || seen.has(trimmed)) {
+            return;
+        }
+        seen.add(trimmed);
+    };
+    push(log?.url);
+    push(log?.sourceUrl);
+    push(log?.tab_url);
+    push(log?.pageUrl);
+    push(log?.page_url);
+    push(log?.manifestUrl);
+    push(manifest?.url);
+    push(manifest?.sourceUrl);
+    if (Array.isArray(log?.manifests)) {
+        log.manifests.forEach((entry) => push(entry?.url));
+    }
+    return Array.from(seen);
+}
+
+/**
+ * @description フォールバックログ識別子を生成します。
+ * @param {string} url 基準 URL です。
+ * @returns {string} 一意なキーです。
+ */
+function buildGenericLogKey(url) {
+    return `GENERIC:${url}`;
+}
+
+/**
+ * @description ページ URL とタブ URL から、yt-dlp が対応する方を優先的に選びます。
+ * @param {string|null|undefined} payloadUrl コンテンツ側が報告した URL です。
+ * @param {string|null|undefined} tabUrl タブが保持する URL です。
+ * @returns {Promise<string|null>} 対応サイトであれば URL を返します。
+ */
+async function resolveSupportedPageUrl(payloadUrl, tabUrl) {
+    const candidates = [];
+    if (tabUrl) {
+        candidates.push(tabUrl);
+    }
+    if (payloadUrl && payloadUrl !== tabUrl) {
+        candidates.push(payloadUrl);
+    }
+    if (candidates.length === 0) {
+        return null;
+    }
+    for (const url of candidates) {
+        if (isLikelyAuthHost(url)) {
+            continue;
+        }
+        try {
+            if (await isUrlSupportedByYtDlp(url)) {
+                return url;
+            }
+        } catch {
+            // 無視して次候補を試す。
+        }
+    }
+    return null;
+}
+
+/**
+ * @description 認証ホストなど、ダウンロード対象として不適切な URL かを判別します。
+ * @param {string} url 判定対象です。
+ * @returns {boolean} 認証系ホストと推定される場合は true。
+ */
+function isLikelyAuthHost(url) {
+    if (!url) {
+        return false;
+    }
+    try {
+        const { hostname } = new URL(url);
+        if (!hostname) {
+            return false;
+        }
+        const normalized = hostname.toLowerCase();
+        if (normalized.startsWith("accounts.")) {
+            return true;
+        }
+        if (normalized.includes("auth.")) {
+            return true;
+        }
+        return false;
+    } catch {
+        return false;
+    }
+}
+
+/**
+ * @description 既存の GENERIC ログを更新し、storage にも反映します。
+ * @param {string} logKey 更新対象のキーです。
+ * @param {{pageTitle?: string|null, url?: string|null}} updates 反映したい値です。
+ * @returns {Promise<void>} 完了時に解決します。
+ */
+async function updateGenericLogMetadata(logKey, updates = {}) {
+    if (!logKey) {
+        return;
+    }
+    const index = logs.findIndex((entry) => entry?.pssh_data === logKey);
+    if (index < 0) {
+        return;
+    }
+    const current = logs[index] || {};
+    const next = {
+        ...current,
+        pageTitle: updates.pageTitle || current.pageTitle || null,
+        url: updates.url || current.url || null
+    };
+    logs[index] = next;
+    try {
+        await AsyncLocalStorage.setStorage({ [logKey]: next });
+    } catch (error) {
+        console.debug("[WidevineProxy2] failed to persist generic log update", error);
+    }
 }
 
 /**
@@ -651,6 +1151,112 @@ function rememberTabResolution(tabId, tabUrl) {
     } catch {
         upsertTabResolutionEntry(tabUrl, tabId);
     }
+}
+
+/**
+ * @description タブに紐づく最新のページメタデータを記録します。
+ * @param {number|null} tabId 対象タブIDです。
+ * @param {{url?: string|null, title?: string|null}} metadata 保存したい情報です。
+ */
+function rememberTabPageMetadata(tabId, metadata = {}) {
+    if (typeof tabId !== "number") {
+        return;
+    }
+    const next = {
+        url: metadata.url || null,
+        title: metadata.title || null,
+        recordedAt: Date.now()
+    };
+    tabNavigationMetadataByTab.set(tabId, next);
+    if (next.url) {
+        rememberTabResolution(tabId, next.url);
+    }
+}
+
+/**
+ * @description タブに保存された最新メタデータを取得します。
+ * @param {number|null} tabId 対象タブIDです。
+ * @returns {{url: string|null, title: string|null}|null} 保存済みデータです。
+ */
+function getTabPageMetadata(tabId) {
+    if (typeof tabId !== "number") {
+        return null;
+    }
+    return tabNavigationMetadataByTab.get(tabId) || null;
+}
+
+/**
+ * @description タブ上で document.title を直接取得します。
+ * @param {number} tabId 対象タブIDです。
+ * @returns {Promise<string|null>} 取得したタイトルです。
+ */
+async function probeDocumentTitle(tabId) {
+    if (typeof tabId !== "number") {
+        return null;
+    }
+    try {
+        const results = await chrome.scripting.executeScript({
+            target: { tabId },
+            func: () => document?.title || null
+        });
+        const first = Array.isArray(results) ? results[0] : null;
+        const value = first?.result || null;
+        return typeof value === "string" && value.trim() ? value : null;
+    } catch (error) {
+        if (!isExpectedRuntimePortError(error)) {
+            console.debug("[WidevineProxy2] probeDocumentTitle failed", error);
+        }
+        return null;
+    }
+}
+
+/**
+ * @description タブAPIとキャッシュを併用して最新のURLとタイトルを推測します。
+ * @param {number|null} tabId 対象タブIDです。
+ * @param {{url?: string|null, title?: string|null}} fallback 初期候補です。
+ * @returns {Promise<{url: string|null, title: string|null}>} 推測結果です。
+ */
+async function resolveLatestTabContext(tabId, fallback = {}) {
+    let resolvedUrl = fallback?.url || null;
+    let resolvedTitle = fallback?.title || null;
+    if (typeof tabId === "number") {
+        try {
+            const tab = await chrome.tabs.get(tabId);
+            if (tab?.url) {
+                resolvedUrl = tab.url;
+            }
+            if (tab?.title) {
+                resolvedTitle = tab.title;
+            }
+            rememberTabPageMetadata(tabId, { url: tab?.url || resolvedUrl, title: tab?.title || resolvedTitle });
+        } catch (error) {
+            if (!isExpectedRuntimePortError(error)) {
+                console.debug("[WidevineProxy2] failed to resolve latest tab context", error);
+            }
+        }
+    }
+    if (typeof tabId === "number") {
+        const cached = getTabPageMetadata(tabId);
+        if (cached) {
+            if (!resolvedUrl && cached.url) {
+                resolvedUrl = cached.url;
+            }
+            if (!resolvedTitle && cached.title) {
+                resolvedTitle = cached.title;
+            }
+        }
+        if (!resolvedTitle) {
+            const probedTitle = await probeDocumentTitle(tabId);
+            if (probedTitle) {
+                resolvedTitle = probedTitle;
+                rememberTabPageMetadata(tabId, { url: resolvedUrl || cached?.url || fallback?.url || null, title: probedTitle });
+            }
+        }
+    }
+    return {
+        url: resolvedUrl || null,
+        title: resolvedTitle || null
+    };
 }
 
 /**
@@ -850,6 +1456,12 @@ async function maybeInjectDownloadOverlay(tabId, log) {
     const sourceUrl = log.url || tab.url;
     const bridgeReady = await ensureOverlayBridge(targetTabId);
     if (!bridgeReady) {
+        updateOverlayLifecycle(targetTabId, {
+            phase: "probing",
+            lastInjectionFailureReason: "bridge-init",
+            lastInjectionFailureAt: Date.now(),
+            lastKnownUrl: tab.url
+        });
         return;
     }
     upsertOverlayState(targetTabId, {
@@ -857,6 +1469,12 @@ async function maybeInjectDownloadOverlay(tabId, log) {
         lastManifestUrl: manifestUrl,
         lastSourceUrl: sourceUrl,
         lastUpdateAt: Date.now()
+    });
+    updateOverlayLifecycle(targetTabId, {
+        phase: "ready",
+        lastInjectionAt: Date.now(),
+        lastKnownUrl: tab.url,
+        lastLogKey: log.pssh_data || null
     });
     const payload = {
         sourceUrl,
@@ -873,6 +1491,112 @@ async function maybeInjectDownloadOverlay(tabId, log) {
             console.debug("[WidevineProxy2] overlay update failed after retry", targetTabId);
         }
     }
+    if (!delivered) {
+        updateOverlayLifecycle(targetTabId, {
+            phase: "probing",
+            lastInjectionFailureReason: "delivery-failed",
+            lastInjectionFailureAt: Date.now()
+        });
+    }
+}
+
+/**
+ * @description タブに紐づくオーバーレイライフサイクル状態を取得します。
+ * @param {number} tabId 対象タブIDです。
+ * @returns {object|null} 保存済み状態です。
+ */
+function getOverlayLifecycle(tabId) {
+    if (typeof tabId !== "number") {
+        return null;
+    }
+    return overlayLifecycleByTab.get(tabId) || null;
+}
+
+/**
+ * @description タブに紐づくオーバーレイライフサイクル状態を更新します。
+ * @param {number} tabId 対象タブIDです。
+ * @param {object} patch 反映したい差分です。
+ * @returns {void}
+ */
+function updateOverlayLifecycle(tabId, patch = {}) {
+    if (typeof tabId !== "number") {
+        return;
+    }
+    const current = overlayLifecycleByTab.get(tabId) || {};
+    overlayLifecycleByTab.set(tabId, { ...current, ...patch });
+}
+
+/**
+ * @description タブのオーバーレイライフサイクル状態を破棄します。
+ * @param {number} tabId 対象タブIDです。
+ * @returns {void}
+ */
+function clearOverlayLifecycle(tabId) {
+    if (typeof tabId !== "number") {
+        return;
+    }
+    overlayLifecycleByTab.delete(tabId);
+}
+
+/**
+ * @description フォールバック生成をブロックすべきホストかを判定します。
+ * @param {string|null} url 判定対象の URL です。
+ * @returns {boolean} ブロック対象であれば true。
+ */
+function isOverlayMetadataBlockedHost(url) {
+    if (!url) {
+        return false;
+    }
+    try {
+        const { hostname } = new URL(url);
+        if (!hostname) {
+            return false;
+        }
+        const lower = hostname.toLowerCase();
+        if (OVERLAY_METADATA_BLOCKLIST_HOSTS.has(lower)) {
+            return true;
+        }
+        const baseHost = lower.replace(/^www\./, "");
+        if (OVERLAY_METADATA_BLOCKLIST_HOSTS.has(baseHost)) {
+            return true;
+        }
+    } catch {
+        return false;
+    }
+    return false;
+}
+
+/**
+ * @description ナビゲーション検知時にオーバーレイ状態をリセットします。
+ * @param {number} tabId 対象タブIDです。
+ * @param {{reason?: string, url?: string|null, navigationEvent?: string|null, phase?: string, force?: boolean}} meta 付随情報です。
+ * @returns {Promise<void>} 完了時に解決します。
+ */
+async function resetOverlayForNavigation(tabId, meta = {}) {
+    if (typeof tabId !== "number") {
+        return;
+    }
+    const now = Date.now();
+    const reason = meta.reason || "page-navigation";
+    const lifecycle = getOverlayLifecycle(tabId) || {};
+    if (!meta.force && lifecycle.lastResetAt && (now - lifecycle.lastResetAt) < OVERLAY_RESET_THROTTLE_MS) {
+        updateOverlayLifecycle(tabId, {
+            lastResetReason: reason,
+            lastKnownUrl: meta.url || lifecycle.lastKnownUrl || null,
+            navigationEvent: meta.navigationEvent || lifecycle.navigationEvent || null
+        });
+        return;
+    }
+    if (overlayStateByTab.has(tabId)) {
+        await destroyOverlayForTab(tabId, reason);
+    }
+    updateOverlayLifecycle(tabId, {
+        phase: meta.phase || "resetting",
+        lastResetReason: reason,
+        lastResetAt: now,
+        lastKnownUrl: meta.url || lifecycle.lastKnownUrl || null,
+        navigationEvent: meta.navigationEvent || null
+    });
 }
 
 /**
@@ -1030,6 +1754,76 @@ async function sendTargetedOverlayMessage(tabId, message) {
         }
         console.debug("[WidevineProxy2] overlay targeted send failed", error);
         return false;
+    }
+}
+
+/**
+ * @description オーバーレイへページURLヒントを通知し、UI更新を促します。
+ * @param {number} tabId 対象タブIDです。
+ * @param {string} pageUrl 現在のページURLです。
+ * @param {{reason?: string, transitionType?: string|null}} meta 付随情報です。
+ * @returns {Promise<void>} 完了時に解決します。
+ */
+async function emitOverlayLocationHint(tabId, pageUrl, meta = {}) {
+    if (typeof tabId !== "number" || !pageUrl) {
+        return;
+    }
+    await sendTargetedOverlayMessage(tabId, {
+        type: "WVP_OVERLAY_LOCATION_HINT",
+        payload: {
+            pageUrl,
+            reason: meta.reason || "navigation",
+            transitionType: meta.transitionType || null,
+            hintedAt: Date.now()
+        }
+    });
+}
+
+/**
+ * @description webNavigationイベントをもとにSPA遷移時のURL変化を追跡します。
+ * @param {chrome.webNavigation.WebNavigationTransitionCallbackDetails} details イベント詳細です。
+ * @param {string} reason 呼び出し理由です。
+ * @returns {Promise<void>} 処理完了時に解決します。
+ */
+async function handleTabNavigationMutation(details, reason) {
+    if (!details || details.frameId !== 0) {
+        return;
+    }
+    const tabId = details.tabId;
+    const pageUrl = details.url || null;
+    if (!pageUrl) {
+        return;
+    }
+    await resetOverlayForNavigation(tabId, {
+        url: pageUrl,
+        navigationEvent: `webNavigation:${reason}`,
+        reason: `webNavigation-${reason}`
+    });
+    const state = overlayStateByTab.get(tabId) || {};
+    if (state.lastKnownTabUrl === pageUrl) {
+        return;
+    }
+    rememberTabResolution(tabId, pageUrl);
+    const previousMetadata = getTabPageMetadata(tabId);
+    let effectiveTitle = previousMetadata?.title || null;
+    const probedTitle = await probeDocumentTitle(tabId);
+    if (probedTitle) {
+        effectiveTitle = probedTitle;
+    }
+    rememberTabPageMetadata(tabId, {
+        url: pageUrl,
+        title: effectiveTitle
+    });
+    if (overlayStateByTab.has(tabId)) {
+        upsertOverlayState(tabId, {
+            lastKnownTabUrl: pageUrl,
+            lastNavigationReason: reason,
+            lastNavigationAt: Date.now()
+        });
+        await emitOverlayLocationHint(tabId, pageUrl, {
+            reason,
+            transitionType: details.transitionType || null
+        });
     }
 }
 
@@ -1194,7 +1988,10 @@ chrome.webRequest.onBeforeSendHeaders.addListener(
     ['requestHeaders', chrome.webRequest.OnSendHeadersOptions.EXTRA_HEADERS].filter(Boolean)
 );
 
-async function parseClearKey(body, tab_url, tabId = null, tabTitle = null) {
+async function parseClearKey(body, tabUrlHint, tabId = null, tabTitle = null) {
+    const tabContext = await resolveLatestTabContext(tabId, { url: tabUrlHint, title: tabTitle });
+    const tabUrl = tabContext.url || tabUrlHint || null;
+    const effectiveTitle = tabContext.title || tabTitle || null;
     const clearkey = JSON.parse(atob(body));
 
     const formatted_keys = clearkey["keys"].map(key => ({
@@ -1206,21 +2003,21 @@ async function parseClearKey(body, tab_url, tabId = null, tabTitle = null) {
 
     if (logs.some((log) => log.pssh_data === pssh_data)) {
         console.log("[WidevineProxy2]", `KEYS_ALREADY_RETRIEVED: ${pssh_data}`);
-        await rehydrateOverlayForPssh(pssh_data, { tabId, tabUrl: tab_url, tabTitle });
+        await rehydrateOverlayForPssh(pssh_data, { tabId, tabUrl, tabTitle: effectiveTitle });
         return;
     }
 
-    console.log("[WidevineProxy2]", "CLEARKEY KEYS", formatted_keys, tab_url);
+    console.log("[WidevineProxy2]", "CLEARKEY KEYS", formatted_keys, tabUrl);
     const log = {
         type: "CLEARKEY",
         pssh_data: pssh_data,
         keys: formatted_keys,
-        url: tab_url,
+        url: tabUrl,
         timestamp: Math.floor(Date.now() / 1000),
-        manifests: getTabManifestHistory(tab_url) || [],
-        pageTitle: tabTitle || null
+        manifests: getTabManifestHistory(tabUrl) || [],
+        pageTitle: effectiveTitle || null
     }
-    await persistCapturedKeyLog(log, { tabId, tabTitle });
+    await persistCapturedKeyLog(log, { tabId, tabTitle: effectiveTitle });
 }
 
 async function generateChallenge(body) {
@@ -1263,7 +2060,10 @@ async function generateChallenge(body) {
     return uint8ArrayToBase64(challenge);
 }
 
-async function parseLicense(body, tab_url, tabId = null, tabTitle = null) {
+async function parseLicense(body, tabUrlHint, tabId = null, tabTitle = null) {
+    const tabContext = await resolveLatestTabContext(tabId, { url: tabUrlHint, title: tabTitle });
+    const tabUrl = tabContext.url || tabUrlHint || null;
+    const effectiveTitle = tabContext.title || tabTitle || null;
     const license = base64toUint8Array(body);
     const signed_license_message = SignedMessage.decode(license);
 
@@ -1283,17 +2083,17 @@ async function parseLicense(body, tab_url, tabId = null, tabTitle = null) {
     const keys = await loadedSession.parseLicense(license);
     const pssh = loadedSession.getPSSH();
 
-    console.log("[WidevineProxy2]", "KEYS", JSON.stringify(keys), tab_url);
+    console.log("[WidevineProxy2]", "KEYS", JSON.stringify(keys), tabUrl);
     const log = {
         type: "WIDEVINE",
         pssh_data: pssh,
         keys: keys,
-        url: tab_url,
+        url: tabUrl,
         timestamp: Math.floor(Date.now() / 1000),
-        manifests: getTabManifestHistory(tab_url) || [],
-        pageTitle: tabTitle || null
+        manifests: getTabManifestHistory(tabUrl) || [],
+        pageTitle: effectiveTitle || null
     }
-    await persistCapturedKeyLog(log, { tabId, tabTitle });
+    await persistCapturedKeyLog(log, { tabId, tabTitle: effectiveTitle });
 
     sessions.delete(loaded_request_id);
     return null;
@@ -1338,7 +2138,10 @@ async function generateChallengeRemote(body) {
     return challenge_b64;
 }
 
-async function parseLicenseRemote(body, tab_url, tabId = null, tabTitle = null) {
+async function parseLicenseRemote(body, tabUrlHint, tabId = null, tabTitle = null) {
+    const tabContext = await resolveLatestTabContext(tabId, { url: tabUrlHint, title: tabTitle });
+    const tabUrl = tabContext.url || tabUrlHint || null;
+    const effectiveTitle = tabContext.title || tabTitle || null;
     const license = base64toUint8Array(body);
     const signed_license_message = SignedMessage.decode(license);
 
@@ -1376,17 +2179,17 @@ async function parseLicenseRemote(body, tab_url, tabId = null, tabTitle = null) 
 
     const keys = returned_keys.map(({ key, key_id }) => ({ k: key, kid: key_id }));
 
-    console.log("[WidevineProxy2]", "KEYS", JSON.stringify(keys), tab_url);
+    console.log("[WidevineProxy2]", "KEYS", JSON.stringify(keys), tabUrl);
     const log = {
         type: "WIDEVINE",
         pssh_data: session_id.pssh,
         keys: keys,
-        url: tab_url,
+        url: tabUrl,
         timestamp: Math.floor(Date.now() / 1000),
-        manifests: getTabManifestHistory(tab_url) || [],
-        pageTitle: tabTitle || null
+        manifests: getTabManifestHistory(tabUrl) || [],
+        pageTitle: effectiveTitle || null
     }
-    await persistCapturedKeyLog(log, { tabId, tabTitle });
+    await persistCapturedKeyLog(log, { tabId, tabTitle: effectiveTitle });
 
     sessions.delete(loaded_request_id);
     return null;
@@ -1470,7 +2273,15 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
             const newValue = Boolean(changes.overlay_preview_enabled.newValue);
             if (!newValue) {
                 for (const tabId of Array.from(overlayStateByTab.keys())) {
-                    destroyOverlayForTab(tabId, "feature-disabled").catch(() => void 0);
+                    destroyOverlayForTab(tabId, "feature-disabled")
+                        .then(() => {
+                            updateOverlayLifecycle(tabId, {
+                                phase: "idle",
+                                lastResetReason: "feature-disabled",
+                                lastResetAt: Date.now()
+                            });
+                        })
+                        .catch(() => void 0);
                 }
             }
         }
@@ -1482,7 +2293,35 @@ chrome.tabs.onRemoved.addListener((tabId) => {
     overlayStateByTab.delete(tabId);
     forgetJobTabTargetsForTab(tabId).catch(() => {});
     forgetTabResolutionForTab(tabId);
+    clearOverlayLifecycle(tabId);
 });
+
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+    if (!changeInfo || changeInfo.status !== "loading") {
+        return;
+    }
+    resetOverlayForNavigation(tabId, {
+        url: changeInfo.url || tab?.url || null,
+        navigationEvent: "tabs.onUpdated",
+        reason: "tab-loading"
+    }).catch(() => {});
+});
+
+if (chrome?.webNavigation?.onHistoryStateUpdated) {
+    chrome.webNavigation.onHistoryStateUpdated.addListener((details) => {
+        handleTabNavigationMutation(details, "history-state").catch((error) => {
+            console.debug("[WidevineProxy2] history-state observer failed", error);
+        });
+    }, WEB_NAVIGATION_FILTER);
+}
+
+if (chrome?.webNavigation?.onCommitted) {
+    chrome.webNavigation.onCommitted.addListener((details) => {
+        handleTabNavigationMutation(details, "committed").catch((error) => {
+            console.debug("[WidevineProxy2] committed observer failed", error);
+        });
+    }, WEB_NAVIGATION_FILTER);
+}
 
 async function handleExtensionMessage(message, sender) {
     if (!message || !message.type) {
@@ -1564,10 +2403,30 @@ async function handleExtensionMessage(message, sender) {
                 type: parsed.type,
                 url: parsed.url,
                 headers,
-                size: parsed.size ?? null
+                size: parsed.size ?? null,
+                details: parsed.details || null
             };
-            rememberManifest(tab_url, element);
+            const tabContext = await resolveLatestTabContext(tabId, { url: tab_url, title: tabTitle });
+            rememberManifest(tabContext.url, element);
             return null;
+        }
+        case "PAGE_NAVIGATION": {
+            let payload = {};
+            try {
+                payload = JSON.parse(message.body || "{}");
+            } catch (error) {
+                console.debug("[WidevineProxy2] invalid PAGE_NAVIGATION payload", error);
+            }
+            return handleOverlayNavigationSignal(payload, sender);
+        }
+        case "PAGE_METADATA": {
+            let payload = {};
+            try {
+                payload = JSON.parse(message.body || "{}");
+            } catch (error) {
+                console.debug("[WidevineProxy2] invalid PAGE_METADATA payload", error);
+            }
+            return handleGenericPageMetadata(payload, sender);
         }
         case "HOST_STATUS_QUERY":
             try {
@@ -2643,17 +3502,9 @@ async function enqueueNativeJob(log, options = {}) {
         if (!log) {
             return;
         }
-        if (!Array.isArray(log.keys) || log.keys.length === 0) {
-            console.debug("[WidevineProxy2] enqueueNativeJob skipped: no keys");
-            return;
-        }
         const manifest = resolveManifestCandidate(log);
-        if (!manifest?.url) {
-            console.debug("[WidevineProxy2] enqueueNativeJob skipped: manifest missing");
-            return;
-        }
 
-        const headers = sanitizeHeaders(manifest.headers);
+        const headers = sanitizeHeaders(manifest?.headers);
         nativeHostBridge.setConnectionDemand(true, { reason: "job-enqueue" });
         const enqueueTabId = typeof options.tabId === "number" ? options.tabId : null;
         const clientJobId = typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -2663,33 +3514,52 @@ async function enqueueNativeJob(log, options = {}) {
             ? options.outputDir
             : await SettingsManager.getOutputDirectory();
         const outputDir = sanitizeOutputDirectorySetting(preferredOutputDir);
-        await upsertNativeJobDraft(clientJobId, {
-            clientJobId,
-            stage: "pending",
-            status: "pending",
-            detail: "ネイティブホストへ送信中",
-            mpdUrl: manifest.url,
-            sourceUrl: log.url ?? manifest.url,
-            keyCount: log.keys.length,
-            outputDir: outputDir || null,
-            tabId: enqueueTabId,
-            createdAt: Date.now(),
-            updatedAt: Date.now()
-        });
-        if (enqueueTabId && log?.url) {
-            rememberTabResolution(enqueueTabId, log.url);
-        }
 
-        const strategyContext = {
+        const baseContext = {
             clientJobId,
             manifest,
             log,
             headers,
             cookieStrategy,
             cookieProfile,
-            outputDir
+            outputDir,
+            keys: Array.isArray(log.keys) ? log.keys : []
         };
-        const payload = buildNativeJobPayload(strategyContext);
+        const strategyContext = await attachSiteProfileToStrategyContext(baseContext);
+        const effectiveManifest = strategyContext.manifest || manifest;
+        if (!effectiveManifest?.url) {
+            console.debug("[WidevineProxy2] enqueueNativeJob skipped: manifest missing after site profile");
+            return;
+        }
+        const effectiveLog = strategyContext.log || log;
+        const keyCount = Array.isArray(strategyContext.keys) ? strategyContext.keys.length : 0;
+
+        await upsertNativeJobDraft(clientJobId, {
+            clientJobId,
+            stage: "pending",
+            status: "pending",
+            detail: "ネイティブホストへ送信中",
+            mpdUrl: effectiveManifest.url,
+            sourceUrl: effectiveLog?.url ?? effectiveManifest.url,
+            keyCount,
+            outputDir: strategyContext.outputDir || null,
+            tabId: enqueueTabId,
+            createdAt: Date.now(),
+            updatedAt: Date.now()
+        });
+        if (enqueueTabId && effectiveLog?.url) {
+            rememberTabResolution(enqueueTabId, effectiveLog.url);
+        }
+        let payload;
+        try {
+            payload = buildNativeJobPayload(strategyContext);
+        } catch (error) {
+            if (error && typeof error.message === "string" && error.message.includes("ダウンロードストラテジー")) {
+                console.debug("[WidevineProxy2] enqueueNativeJob skipped:", error.message);
+                return;
+            }
+            throw error;
+        }
         validateNativeJobPayload(payload);
 
         const commandPreview = buildCommandPreviewForPayload(payload, strategyContext);
@@ -2701,7 +3571,7 @@ async function enqueueNativeJob(log, options = {}) {
         }
         await stashJobPayload(clientJobId, payload);
         await nativeHostBridge.sendMessage(payload);
-        purgeManifestForTab(log.url);
+        purgeManifestForTab(effectiveLog?.url || log.url);
         return { clientJobId };
     } catch (error) {
         console.error("[WidevineProxy2] enqueueNativeJob error", error);
@@ -2740,7 +3610,11 @@ function validateNativeJobPayload(payload) {
     if (!payload.mpdUrl || !/^https?:\/\//i.test(payload.mpdUrl)) {
         throw new Error("mpdUrl が不正です");
     }
-    if (!Array.isArray(payload.keys) || payload.keys.length === 0) {
+    if (!Array.isArray(payload.keys)) {
+        throw new Error("keys が配列ではありません");
+    }
+    const requiresKeys = doesPayloadRequireKeys(payload);
+    if (requiresKeys && payload.keys.length === 0) {
         throw new Error("keys が空です");
     }
     payload.keys.forEach((entry, index) => {
@@ -2767,7 +3641,8 @@ function validateNativeJobPayload(payload) {
     if (!cookies.profile) {
         throw new Error("cookies.profile が不正です");
     }
-    if (!payload.outputTemplate) {
+    const needsCustomOutput = doesPayloadRequireKeys(payload);
+    if (needsCustomOutput && !payload.outputTemplate) {
         throw new Error("outputTemplate が不正です");
     }
     if (payload.outputDir && typeof payload.outputDir !== "string") {
@@ -2791,6 +3666,20 @@ function serializeLicenseKeys(keys = []) {
             key: sanitizeHexString(entry.k)
         }))
         .filter((entry) => entry.kid && entry.key);
+}
+
+/**
+ * @description ペイロードが鍵を必要とするかどうかを判定します。
+ * @param {object} payload 判定対象のペイロードです。
+ * @returns {boolean} 鍵が必須なら true。
+ */
+function doesPayloadRequireKeys(payload) {
+    const encryption = payload?.metadata?.transport?.encryption || payload?.metadata?.encryption;
+    if (!encryption) {
+        return true;
+    }
+    const normalized = encryption.toString().toLowerCase();
+    return normalized !== "clear" && normalized !== "none";
 }
 
 /**
@@ -2859,7 +3748,16 @@ function sanitizeRevealPathInput(value) {
  * @returns {Promise<void>} 送信完了時に解決します。
  */
 async function requestNativeFolderReveal(path) {
+    nativeHostBridge.setConnectionDemand(true, { reason: "folder-reveal" });
+    if (folderRevealReleaseTimer) {
+        clearTimeout(folderRevealReleaseTimer);
+        folderRevealReleaseTimer = null;
+    }
     await nativeHostBridge.sendMessage({ kind: "reveal-output", path });
+    folderRevealReleaseTimer = setTimeout(() => {
+        nativeHostBridge.setConnectionDemand(false, { reason: "folder-reveal-release" });
+        folderRevealReleaseTimer = null;
+    }, 2000);
 }
 
 /**
@@ -2895,10 +3793,21 @@ function sanitizeHexString(value) {
  */
 function deriveOutputSlug(log, manifest) {
     const primaryTitle = sanitizeDocumentTitle(log?.pageTitle || manifest?.pageTitle || "");
+    const urlSlug = sanitizeOutputSlug(extractSlugFromUrl(log?.url) || extractSlugFromUrl(manifest?.url));
+    if (primaryTitle && urlSlug) {
+        const merged = sanitizeOutputSlug(`${primaryTitle}_${urlSlug}`);
+        if (merged) {
+            return merged;
+        }
+        return primaryTitle;
+    }
     if (primaryTitle) {
         return primaryTitle;
     }
-    const fallbackCandidates = [extractSlugFromUrl(log?.url), extractSlugFromUrl(manifest?.url), log?.pssh_data, log?.clientJobId];
+    if (urlSlug) {
+        return urlSlug;
+    }
+    const fallbackCandidates = [log?.pssh_data, log?.clientJobId];
     for (const candidate of fallbackCandidates) {
         const sanitized = sanitizeOutputSlug(candidate);
         if (sanitized) {

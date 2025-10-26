@@ -47,12 +47,12 @@ export class DashWidevineStrategy extends DownloadStrategy {
         if (!manifestUrl) {
             throw new Error("manifest url missing");
         }
-        const keys = serializeLicenseKeys(context?.log?.keys || []);
+        const keys = serializeLicenseKeys(context?.keys || context?.log?.keys || []);
         if (keys.length === 0) {
             throw new Error("keys missing");
         }
         const deriveOutputSlug = this.helpers.deriveOutputSlug || (() => "widevineproxy2");
-        const slug = deriveOutputSlug(context.log, context.manifest) || `widevineproxy2-${Date.now()}`;
+        const slug = deriveOutputSlug(context?.log || {}, context.manifest) || `widevineproxy2-${Date.now()}`;
         const sourceUrl = context?.log?.url || manifestUrl;
         const metadataCookies = this.buildCookieMetadata(context);
         // transport 情報を細分化しておくと、将来的に HLS など他方式とも比較しやすくなる
@@ -105,6 +105,7 @@ export class DashWidevineStrategy extends DownloadStrategy {
         const quoteArg = this.helpers.quoteArg || ((value) => `"${String(value)}"`);
         const args = [];
         args.push(`yt-dlp ${quoteArg(payload.mpdUrl)}`);
+        args.push("-f \"bv*+ba/b\"");
         args.push("--allow-unplayable-formats");
         args.push("--no-part");
         args.push("--concurrent-fragments 5");

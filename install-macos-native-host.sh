@@ -20,12 +20,20 @@ MSG
 fi
 
 BINARY_SOURCE=""
+echo "[info] バイナリ候補パスを順に確認します"  # 候補探索の経緯を表示
 for candidate in "${BIN_CANDIDATES[@]}"; do
   if [[ -f "$candidate" ]]; then
+    echo "[hit] $candidate"
     BINARY_SOURCE="$candidate"
     break
+  else
+    echo "[miss] $candidate"
   fi
 done
+
+if [[ -n "$BINARY_SOURCE" ]]; then
+  echo "[info] 使用するバイナリ: $BINARY_SOURCE"
+fi
 
 if [[ -z "$BINARY_SOURCE" ]]; then
 cat >&2 <<MSG

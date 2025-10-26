@@ -19,8 +19,17 @@
         toastShadow: null,
         toastNode: null,
         toastMessageNode: null,
-        toastTimer: null
+        toastTimer: null,
+        locationObserverBound: false,
+        locationCheckTimer: null,
+        lastKnownPageUrl: typeof window !== "undefined" ? window.location.href : null,
+        displayContextUrl: null
     };
+
+    globalState.historyPatched = globalState.historyPatched || {};
+    if (!globalState.lastKnownPageUrl && typeof window !== "undefined" && window.location) {
+        globalState.lastKnownPageUrl = window.location.href;
+    }
 
     function sendExtensionMessage(payload) {
         return new Promise((resolve, reject) => {
@@ -156,13 +165,139 @@
     function updateOverlay(payload = {}) {
         mountOverlay();
         globalState.lastPayload = payload;
-        const manifestText = payload.sourceUrl || payload.manifestUrl || "動画を検出";
-        const host = safeExtractHost(manifestText);
+        if (!globalState.lastKnownPageUrl && typeof window !== "undefined" && window.location) {
+            globalState.lastKnownPageUrl = window.location.href;
+        }
+        const contextUrl = resolveOverlayContextUrl(payload);
+        globalState.displayContextUrl = contextUrl || globalState.lastKnownPageUrl;
+        const host = safeExtractHost(globalState.displayContextUrl || "動画を検出");
         announceStatus("DL ready", host);
         if (globalState.buttonNode) {
             globalState.buttonNode.disabled = false;
             globalState.buttonNode.textContent = CTA_LABEL_DEFAULT;
         }
+    }
+
+    /**
+     * @description オーバーレイ表示に使うURLを決定します。
+     * @param {{sourceUrl?: string|null, manifestUrl?: string|null}} payload 最新ペイロードです。
+     * @returns {string|null} 表示候補のURLです。
+     */
+    function resolveOverlayContextUrl(payload = {}) {
+        if (payload.sourceUrl) {
+            return payload.sourceUrl;
+        }
+        if (payload.manifestUrl) {
+            return payload.manifestUrl;
+        }
+        if (globalState.lastKnownPageUrl) {
+            return globalState.lastKnownPageUrl;
+        }
+        if (typeof window !== "undefined" && window.location) {
+            return window.location.href;
+        }
+        return null;
+    }
+
+    /**
+     * @description 現在保持しているURLに基づきヒントテキストのみ更新します。
+     */
+    function refreshOverlayContext() {
+        if (!globalState.hintNode) {
+            return;
+        }
+        const detailSource = globalState.displayContextUrl || globalState.lastKnownPageUrl;
+        const detail = safeExtractHost(detailSource || "クリックで保存");
+        globalState.hintNode.textContent = detail;
+    }
+
+    /**
+     * @description 背景から届いたロケーションヒントを反映します。
+     * @param {{pageUrl?: string|null, reason?: string}} payload ヒント情報です。
+     */
+    function applyOverlayLocationHint(payload = {}) {
+        if (!payload.pageUrl) {
+            return;
+        }
+        globalState.lastKnownPageUrl = payload.pageUrl;
+        handleOverlayLocationChange(payload.pageUrl, payload.reason || "hint");
+    }
+
+    /**
+     * @description URL変化に合わせて表示文脈を差し替えます。
+     * @param {string} nextUrl 新しいURLです。
+     * @param {string} trigger 発火理由です。
+     */
+    function handleOverlayLocationChange(nextUrl, trigger = "navigation") {
+        if (!nextUrl) {
+            return;
+        }
+        globalState.displayContextUrl = nextUrl;
+        refreshOverlayContext();
+    }
+
+    /**
+     * @description history操作後のURL反映をデバウンス検知します。
+     * @param {string} trigger 呼び出し元識別子です。
+     */
+    function scheduleLocationCheck(trigger) {
+        if (globalState.locationCheckTimer) {
+            clearTimeout(globalState.locationCheckTimer);
+        }
+        globalState.locationCheckTimer = setTimeout(() => {
+            globalState.locationCheckTimer = null;
+            if (typeof window === "undefined" || !window.location) {
+                return;
+            }
+            const current = window.location.href;
+            if (current === globalState.lastKnownPageUrl) {
+                return;
+            }
+            globalState.lastKnownPageUrl = current;
+            handleOverlayLocationChange(current, trigger);
+        }, 75);
+    }
+
+    /**
+     * @description history APIをラップし、URL更新を取りこぼさないようにします。
+     * @param {"pushState"|"replaceState"} methodName 対象メソッドです。
+     */
+    function bindHistoryMethod(methodName) {
+        if (typeof history === "undefined" || typeof history[methodName] !== "function") {
+            return;
+        }
+        if (globalState.historyPatched?.[methodName]) {
+            return;
+        }
+        const original = history[methodName];
+        history[methodName] = function patchedHistoryMethod(...args) {
+            const result = original.apply(this, args);
+            // URL書き換えはイベントループ越しになるため、少し待ってから反映を確認する
+            scheduleLocationCheck(methodName);
+            return result;
+        };
+        globalState.historyPatched = globalState.historyPatched || {};
+        globalState.historyPatched[methodName] = true;
+    }
+
+    /**
+     * @description SPA遷移にも追従するロケーション監視を開始します。
+     */
+    function startLocationObserver() {
+        if (globalState.locationObserverBound) {
+            return;
+        }
+        if (typeof window !== "undefined" && window.location) {
+            globalState.lastKnownPageUrl = window.location.href;
+        }
+        const eventNames = ["popstate", "hashchange"];
+        eventNames.forEach((eventName) => {
+            window.addEventListener(eventName, () => scheduleLocationCheck(eventName), true);
+        });
+        window.addEventListener("pageshow", () => scheduleLocationCheck("pageshow"), true);
+        bindHistoryMethod("pushState");
+        bindHistoryMethod("replaceState");
+        globalState.locationObserverBound = true;
     }
 
     /**
@@ -360,6 +495,9 @@
             if (message.type === "WVP_OVERLAY_UPDATE") {
                 updateOverlay(message.payload || {});
             }
+            if (message.type === "WVP_OVERLAY_LOCATION_HINT") {
+                applyOverlayLocationHint(message.payload || {});
+            }
             if (message.type === "WVP_OVERLAY_DESTROY") {
                 dismissOverlay(message.reason || "remote");
             }
@@ -370,5 +508,6 @@
         globalState.listenerBound = true;
     }
 
+    startLocationObserver();
     mountOverlay();
 })();

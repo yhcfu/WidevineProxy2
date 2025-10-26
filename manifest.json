@@ -13,7 +13,8 @@
     "nativeMessaging",
     "alarms",
     "offscreen",
-    "management"
+    "management",
+    "webNavigation"
   ],
   "host_permissions": [
     "*://*/*"

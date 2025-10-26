@@ -91,6 +91,38 @@ struct MetadataPayload {
     output_slug: Option<String>,
     #[serde(default)]
     cookies: CookieMetadata,
+    #[serde(rename = "transport", default)]
+    transport: Option<TransportMetadata>,
+}
+
+impl MetadataPayload {
+    /// 暗号化方式から鍵が必要かどうかを判定します。
+    fn requires_key_material(&self) -> bool {
+        let encryption = self
+            .transport
+            .as_ref()
+            .and_then(|transport| transport.encryption.as_ref())
+            .map(|value| value.to_ascii_lowercase());
+        match encryption.as_deref() {
+            Some("clear") | Some("none") => false,
+            _ => true,
+        }
+    }
+}
+
+/// 配送方式に関するメタ情報。
+#[derive(Debug, Deserialize, Serialize, Default, Clone)]
+struct TransportMetadata {
+    #[serde(rename = "manifestType")]
+    manifest_type: Option<String>,
+    #[serde(rename = "drmType")]
+    drm_type: Option<String>,
+    #[serde(rename = "encryption")]
+    encryption: Option<String>,
+    #[serde(rename = "segmentFormat")]
+    segment_format: Option<String>,
+    #[serde(default)]
+    notes: Option<String>,
 }
 
 /// Cookie 設定を表す構造体。
@@ -190,12 +222,25 @@ fn run() -> Result<()> {
     }
 
     let config = HostConfig::detect()?;
+    emit_binary_resolution_log(&config);
     let writer = MessageWriter::new();
     let job_manager = JobManager::new(config, writer.clone());
     log_event("listening for native messages");
     listen_for_messages(writer, job_manager)?;
     log_event("host exiting normally");
     Ok(())
+}
+
+/// ネイティブホストが検出した依存バイナリの絶対パスをログへ記録します。
+fn emit_binary_resolution_log(config: &HostConfig) {
+    let summary = format!(
+        "resolved binaries: yt-dlp={}, mp4decrypt={}, ffmpeg={}",
+        config.yt_dlp.display(),
+        config.mp4decrypt.display(),
+        config.ffmpeg.display()
+    );
+    log_event(&summary);
+    eprintln!("[info] {summary}");
 }
 
 /// 依存バイナリの存在確認と動作チェックを行います。
@@ -288,7 +333,15 @@ fn handle_download_request(
         });
     }
 
-    if request.keys.is_empty() {
+    let metadata: MetadataPayload = request
+        .metadata
+        .take()
+        .map(|value| serde_json::from_value(value).context("metadata のパースに失敗しました"))
+        .transpose()? // Option<Result<T>> -> Result<Option<T>>
+        .unwrap_or_default();
+    let requires_keys = metadata.requires_key_material();
+    let keys = mem::take(&mut request.keys);
+    if requires_keys && keys.is_empty() {
         return Ok(HostResponse {
             status: ResponseStatus::Error,
             job_id: None,
@@ -296,14 +349,6 @@ fn handle_download_request(
             message: "keys が見つかりません".to_string(),
         });
     }
-
-    let metadata: MetadataPayload = request
-        .metadata
-        .take()
-        .map(|value| serde_json::from_value(value).context("metadata のパースに失敗しました"))
-        .transpose()? // Option<Result<T>> -> Result<Option<T>>
-        .unwrap_or_default();
-    let keys = mem::take(&mut request.keys);
     let output_dir = normalize_output_dir(request.output_dir.take())?;
 
     let validated = ValidatedRequest {
@@ -1200,18 +1245,32 @@ fn process_job(
         )?;
         log_event(format!("job {} starting yt-dlp", ctx.job_id));
         let download = run_yt_dlp(ctx, config, &paths, writer, output_root, control)?;
-        control.ensure_active()?;
-        send_stage_event(
-            writer,
-            ctx,
-            JobStage::Decrypting,
-            "mp4decrypt 実行中",
-            0.7,
-            None,
-            output_root,
-        )?;
-        log_event(format!("job {} starting mp4decrypt", ctx.job_id));
-        let decrypted = run_mp4decrypt(ctx, config, &paths, &download, control)?;
+        let needs_decrypt = !ctx.request.keys.is_empty();
+        let decrypted = if needs_decrypt {
+            control.ensure_active()?;
+            send_stage_event(
+                writer,
+                ctx,
+                JobStage::Decrypting,
+                "mp4decrypt 実行中",
+                0.7,
+                None,
+                output_root,
+            )?;
+            log_event(format!("job {} starting mp4decrypt", ctx.job_id));
+            run_mp4decrypt(ctx, config, &paths, &download, control)?
+        } else {
+            send_stage_event(
+                writer,
+                ctx,
+                JobStage::Decrypting,
+                "暗号化されていないストリームのため復号をスキップ",
+                0.7,
+                None,
+                output_root,
+            )?;
+            promote_clear_artifacts(&download)
+        };
         let final_basename = resolve_final_basename(ctx, &decrypted);
         let final_target = output_root.join(format!("{}.mp4", final_basename));
         control.ensure_active()?;
@@ -1278,6 +1337,8 @@ fn run_yt_dlp(
     let mut command = Command::new(&config.yt_dlp);
     command
         .arg(&ctx.request.mpd_url)
+        .arg("-f")
+        .arg("bv*+ba/b")
         .arg("--allow-unplayable-formats")
         .arg("--no-part")
         .arg("--concurrent-fragments")
@@ -1441,26 +1502,27 @@ fn collect_download_outputs(dir: &Path) -> Result<DownloadArtifacts> {
     })
 }
 
+/// ファイル名として安全かつ人間が読みやすい文字列へ整形します。
 fn sanitize_filename_component(input: &str) -> String {
-    let mut collapsed = String::new();
-    let mut last_was_underscore = false;
+    let mut buffer = String::with_capacity(input.len());
     for ch in input.chars() {
-        let normalized = if ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '.') {
-            ch
-        } else {
-            '_'
-        };
-        if normalized == '_' && last_was_underscore {
+        // Windows の禁止文字と制御文字のみ除去・置換する
+        if (ch as u32) < 0x20 || ch == '\u{7f}' {
             continue;
         }
-        last_was_underscore = normalized == '_';
-        collapsed.push(normalized);
+        if matches!(ch, '\\' | '/' | ':' | '*' | '?' | '"' | '<' | '>' | '|') {
+            buffer.push(' ');
+            continue;
+        }
+        buffer.push(ch);
     }
-    let trimmed = collapsed.trim_matches('_');
+    let collapsed = buffer.split_whitespace().collect::<Vec<_>>().join(" ");
+    let trimmed = collapsed.trim();
     if trimmed.is_empty() {
-        return "output".to_string();
+        "output".to_string()
+    } else {
+        trimmed.to_string()
     }
-    trimmed.to_string()
 }
 
 fn resolve_final_basename(ctx: &JobContext, decrypted: &DecryptedArtifacts) -> String {
@@ -1537,6 +1599,15 @@ fn run_mp4decrypt(
         audio: audio_output,
         base_label: download.base_label.clone(),
     })
+}
+
+/// 暗号化されていない出力を復号済みアーティファクトとして扱います。
+fn promote_clear_artifacts(download: &DownloadArtifacts) -> DecryptedArtifacts {
+    DecryptedArtifacts {
+        video: download.video.clone(),
+        audio: download.audio.clone(),
+        base_label: download.base_label.clone(),
+    }
 }
 
 fn decrypt_track(
@@ -2091,13 +2162,13 @@ fn resolve_binary(var: &str, fallback: &str) -> Result<PathBuf> {
     if let Ok(value) = env::var(var) {
         return Ok(PathBuf::from(value));
     }
-    if let Ok(path) = which::which(fallback) {
-        return Ok(path);
-    }
     for candidate in fallback_binary_paths(fallback) {
         if candidate.exists() {
             return Ok(candidate);
         }
+    }
+    if let Ok(path) = which::which(fallback) {
+        return Ok(path);
     }
     Err(anyhow!(
         "{fallback} が PATH 上に見つかりません。環境変数 {var} で絶対パスを指定してください"

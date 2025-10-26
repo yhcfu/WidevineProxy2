@@ -1,13 +1,14 @@
 /**
  * @typedef {object} StrategyContext
  * @property {string} clientJobId クライアント側で生成したジョブIDです。
- * @property {object|null} manifest 抽出したマニフェスト情報です。
+ * @property {object|null} manifest 抽出したマニフェスト情報です (content script 解析結果 `details` を含む)。
  * @property {object|null} log Widevineログや解析メタデータです。
- * @property {Array<object>|null} log.keys 抽出済みの鍵配列です。
+ * @property {Array<object>} keys 抽出済みの鍵配列です。
  * @property {object|null} headers マニフェスト取得時のヘッダー群です。
  * @property {"browser"|"netscape"|string|null} cookieStrategy Cookie取得方式です。
  * @property {string|null} cookieProfile Cookie取得対象プロファイルです。
  * @property {string|null} outputDir 出力ディレクトリの希望値です。
+ * @property {{forcedStrategyId?: string|null, canonicalUrl?: string|null, titleHint?: string|null}|null} siteProfile サイト判定の結果メタです。
  */
 
 /**
